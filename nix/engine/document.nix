@@ -59,7 +59,7 @@ let
           aspects
           structuralKeys
           ;
-        entities = ir.entities;
+        inherit (ir) entities;
       };
     };
 in

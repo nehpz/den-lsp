@@ -236,7 +236,7 @@ let
     {
       version = 1;
       entries = lib.concatMap (c: perClass.${c}.entries) classes;
-      ctxTrace = first.ctxTrace;
+      inherit (first) ctxTrace;
       emissions = lib.concatMap (c: emissionsFrom perClass.${c}.scopedClassImports) classes;
       scopes = {
         parent = first.scopeParent;

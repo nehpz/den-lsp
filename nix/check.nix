@@ -23,14 +23,14 @@ in
 {
   imports = [ ./inject-analysis.nix ];
 
-  config.flake.den-lsp-analysis = core.analysisFor { den = config.den; };
+  config.flake.den-lsp-analysis = core.analysisFor { inherit (config) den; };
 
   config.perSystem =
     { pkgs, ... }:
     let
       gate = core.gateFor {
         inherit pkgs lib;
-        den = config.den;
+        inherit (config) den;
       };
     in
     {

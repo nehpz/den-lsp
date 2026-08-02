@@ -6,7 +6,7 @@
 {
   config.den.lib.analysis = lib.mkDefault (
     import ./den-analysis.nix {
-      den = config.den;
+      inherit (config) den;
       inherit lib;
     }
   );

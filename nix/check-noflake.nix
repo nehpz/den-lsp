@@ -22,7 +22,7 @@ let
     core.gateFor {
       pkgs = inputs.nixpkgs.legacyPackages.${system};
       inherit lib;
-      den = config.den;
+      inherit (config) den;
     };
 in
 {
@@ -30,18 +30,22 @@ in
 
   # Declare the output den-natively so den STRICT MODE (den.lib.strict on
   # den.schema.flake) accepts it.
-  config.den.schema.flake.options.den-lsp-analysis = lib.mkOption {
-    type = lib.types.raw;
-    description = "den-lsp analysis document (system-independent, pure eval).";
+  config = {
+    den.schema.flake.options.den-lsp-analysis = lib.mkOption {
+      type = lib.types.raw;
+      description = "den-lsp analysis document (system-independent, pure eval).";
+    };
+
+    flake = {
+      den-lsp-analysis = core.analysisFor { inherit (config) den; };
+
+      checks = lib.genAttrs systems (system: {
+        den-lsp = (gateFor system).check;
+      });
+
+      apps = lib.genAttrs systems (system: {
+        den-lsp-check = (gateFor system).app;
+      });
+    };
   };
-
-  config.flake.den-lsp-analysis = core.analysisFor { den = config.den; };
-
-  config.flake.checks = lib.genAttrs systems (system: {
-    den-lsp = (gateFor system).check;
-  });
-
-  config.flake.apps = lib.genAttrs systems (system: {
-    den-lsp-check = (gateFor system).app;
-  });
 }
