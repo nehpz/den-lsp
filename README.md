@@ -28,7 +28,7 @@ following the den-diagram companion pattern:
 
 ```nix
 {
-  inputs.den-lsp.url = "github:denful/den-lsp";
+  inputs.den-lsp.url = "github:nehpz/den-lsp";
   # inside your flake-parts mkFlake:
   imports = [
     inputs.den.flakeModules.default

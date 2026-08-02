@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     den.url = "github:denful/den";
-    den-lsp.url = "github:denful/den-lsp";
+    den-lsp.url = "github:nehpz/den-lsp";
   };
 
   outputs =
@@ -14,7 +14,6 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
 
