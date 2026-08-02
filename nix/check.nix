@@ -1,14 +1,16 @@
 # Consumer-facing flake-parts module (KD5, R9, R10).
 #
-# Importing this module in a flake-parts Den consumer wires, per system:
-#   checks.den-lsp       — the gate: fails iff any gating finding exists;
-#                          advisory findings print but never affect status (AE4).
-#                          The raw analysis document is exposed at
-#                          .passthru.analysis — the stable eval target for the
-#                          LSP server and tooling (KTD5):
-#                            nix eval --json path:.#checks.<system>.den-lsp.passthru.analysis
-#   apps.den-lsp-check   — fix-shaped text report with the same exit semantics:
-#                            nix run .#den-lsp-check
+# Importing this module in a flake-parts Den consumer wires:
+#   checks.<system>.den-lsp   — the gate: fails iff any gating finding exists;
+#                               advisory findings print but never affect
+#                               status (AE4). Raw document at .passthru.analysis.
+#   apps.<system>.den-lsp-check — fix-shaped text report, same exit semantics.
+#   flake.den-lsp-analysis    — the raw analysis document, system-independent
+#                               (pure eval, no pkgs). Preferred LSP server
+#                               target: an editing machine's system may
+#                               declare no hosts, so the per-system checks
+#                               path may not exist there:
+#                                 nix eval --json path:.#den-lsp-analysis
 #
 # Works against stock den (>= v0.18.0): the analysis layer is injected via
 # inject-analysis.nix, no den changes required. Plain evalModules consumers
@@ -21,10 +23,12 @@ in
 {
   imports = [ ./inject-analysis.nix ];
 
+  config.flake.den-lsp-analysis = core.analysisFor { den = config.den; };
+
   config.perSystem =
     { pkgs, ... }:
     let
-      gate = core {
+      gate = core.gateFor {
         inherit pkgs lib;
         den = config.den;
       };

@@ -11,55 +11,65 @@
 # evaluation errors anyway. The LSP server derives its R13 diagnostic by
 # parsing the same root error from the eval subprocess.
 { den-lsp }:
-{
-  pkgs,
-  lib,
-  den,
-}:
-let
-  engine = den-lsp.lib;
-  classes = builtins.attrNames (den.classes or { });
-  ir = den.lib.analysis.capture { inherit classes; };
-  doc = engine.analyze { inherit ir; };
-  text = engine.renderText doc;
-  hasGating = doc.summary.gating > 0;
-  report = pkgs.writeText "den-lsp-report.txt" text;
-  checkScript = pkgs.writeShellApplication {
-    name = "den-lsp-check";
-    text = ''
-      cat ${report}
-      ${lib.optionalString hasGating ''
-        echo
-        echo "den-lsp: gating findings — apply the fixes above." >&2
-        exit 1
-      ''}
-    '';
-  };
-in
-{
-  check =
-    pkgs.runCommandLocal "den-lsp-check"
-      {
-        passthru.analysis = doc;
-        inherit report;
-      }
-      (
-        if hasGating then
-          ''
-            cat "$report" >&2
-            echo >&2
+rec {
+  # Pure analysis document — no pkgs needed. Exposed system-independently
+  # as the flake output `den-lsp-analysis` (the LSP server's preferred eval
+  # target, since an editing machine's system may declare no hosts).
+  analysisFor =
+    { den }:
+    den-lsp.lib.analyze {
+      ir = den.lib.analysis.capture { classes = builtins.attrNames (den.classes or { }); };
+    };
+
+  gateFor =
+    {
+      pkgs,
+      lib,
+      den,
+    }:
+    let
+      engine = den-lsp.lib;
+      doc = analysisFor { inherit den; };
+      text = engine.renderText doc;
+      hasGating = doc.summary.gating > 0;
+      report = pkgs.writeText "den-lsp-report.txt" text;
+      checkScript = pkgs.writeShellApplication {
+        name = "den-lsp-check";
+        text = ''
+          cat ${report}
+          ${lib.optionalString hasGating ''
+            echo
             echo "den-lsp: gating findings — apply the fixes above." >&2
             exit 1
-          ''
-        else
-          ''
-            cat "$report"
-            cp "$report" "$out"
-          ''
-      );
+          ''}
+        '';
+      };
+    in
+    {
+      check =
+        pkgs.runCommandLocal "den-lsp-check"
+          {
+            passthru.analysis = doc;
+            inherit report;
+          }
+          (
+            if hasGating then
+              ''
+                cat "$report" >&2
+                echo >&2
+                echo "den-lsp: gating findings — apply the fixes above." >&2
+                exit 1
+              ''
+            else
+              ''
+                cat "$report"
+                cp "$report" "$out"
+              ''
+          );
 
-  app = {
-    type = "app";
-    program = lib.getExe checkScript;
-  };
+      app = {
+        type = "app";
+        program = lib.getExe checkScript;
+      };
+    };
 }

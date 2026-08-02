@@ -60,23 +60,42 @@ impl NixEvaluator for CommandNixEvaluator {
         system: String,
     ) -> futures_util::future::BoxFuture<'static, Result<String, String>> {
         Box::pin(async move {
-            let expr = format!(
-                "path:{}#checks.{}.den-lsp.passthru.analysis",
-                workspace_root.display(),
-                system
-            );
+            // Prefer the system-independent document (pure eval; exists even
+            // when the editing machine's system declares no hosts), fall back
+            // to the per-system gate's passthru for older den-lsp modules.
+            let targets = [
+                format!("path:{}#den-lsp-analysis", workspace_root.display()),
+                format!(
+                    "path:{}#checks.{}.den-lsp.passthru.analysis",
+                    workspace_root.display(),
+                    system
+                ),
+            ];
 
-            let output = Command::new("nix")
-                .args(["eval", "--json", &expr])
-                .output()
-                .await
-                .map_err(|e| format!("Failed to run nix eval analysis: {}", e))?;
+            let mut last_err = String::new();
+            for (idx, expr) in targets.iter().enumerate() {
+                let output = Command::new("nix")
+                    .args(["eval", "--json", expr])
+                    .output()
+                    .await
+                    .map_err(|e| format!("Failed to run nix eval analysis: {}", e))?;
 
-            if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).to_string())
-            } else {
-                Err(String::from_utf8_lossy(&output.stderr).to_string())
+                if output.status.success() {
+                    return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+                }
+
+                last_err = String::from_utf8_lossy(&output.stderr).to_string();
+                // Only fall through when the attribute is missing (older
+                // den-lsp module without the flake-level output); a real
+                // evaluation failure must surface as the R13 diagnostic,
+                // not be retried against a second target.
+                let missing_attr = last_err.contains("does not provide attribute")
+                    || last_err.contains("attribute 'den-lsp-analysis' missing");
+                if idx == 0 && !missing_attr {
+                    break;
+                }
             }
+            Err(last_err)
         })
     }
 }
