@@ -3,10 +3,10 @@
 
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1";
+    den.url = "github:denful/den/v0.18.0";
     nix-eval-jobs.url = "https://flakehub.com/f/DeterminateSystems/nix-eval-jobs/3.21.9";
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
-    den.url = "github:denful/den";
   };
 
   outputs =
