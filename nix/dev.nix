@@ -3,7 +3,7 @@
 { inputs, lib, ... }:
 {
   perSystem =
-    { pkgs, system, ... }:
+    { pkgs, ... }:
     let
       engine = inputs.self.lib;
       engineTests = import ../tests { inherit lib engine; };
@@ -39,7 +39,9 @@
           pkgs.rust-analyzer
           pkgs.rustfmt
           pkgs.clippy
-          pkgs.nixfmt-rfc-style
+          pkgs.nixfmt
+          pkgs.fh
+          pkgs.nix-eval-jobs
         ];
       };
     };
