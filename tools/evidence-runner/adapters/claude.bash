@@ -41,15 +41,21 @@ set -e
 # Inspect HELP_TEXT for supported flags without fabricating flags
 INVOCATION=()
 if [[ "$HELP_TEXT" == *"--prompt-file"* ]]; then
-  INVOCATION=("$CLI_BIN" --prompt-file "$PROMPT_FILE" --max-turns "$MAX_TURNS")
+  INVOCATION=("$CLI_BIN" --prompt-file "$PROMPT_FILE")
 elif [[ "$HELP_TEXT" == *"-p "* ]] || [[ "$HELP_TEXT" == *"--prompt "* ]]; then
   PROMPT_TEXT="$(cat "$PROMPT_FILE")"
-  INVOCATION=("$CLI_BIN" -p "$PROMPT_TEXT" --max-turns "$MAX_TURNS")
+  INVOCATION=("$CLI_BIN" -p "$PROMPT_TEXT")
 else
   # Fallback: flag discovery did not match known shapes
   echo "claude.bash: no known CLI prompt flag pattern found in '$CLI_BIN --help'" >&2
   echo '{"status":"failed","turns":null}'
   exit 1
+fi
+
+if [[ "$HELP_TEXT" == *"--max-turns"* ]]; then
+  INVOCATION+=("--max-turns" "$MAX_TURNS")
+else
+  echo "claude.bash: turn cap is enforced only by runner's wall-clock timeout because '$CLI_BIN' does not advertise --max-turns" >&2
 fi
 
 # Execute CLI in WORKSPACE_DIR

@@ -223,6 +223,8 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   DETECTED=false
   PRECISE=false
   FINDINGS_TEXT=""
+  EMPTY_EXPECTED_GUARD=false
+  PRE_EVAL_FAILED=false
 
   if [ "$KIND" = "finding" ]; then
     PRE_EVAL_JSON=""
@@ -232,39 +234,52 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     set -e
     EXPECTED_FINDINGS_JSON="$(jq -c '.expectedFindings // []' <<< "$SCENARIO_OBJ" 2>/dev/null || echo "[]")"
     [ -z "$EXPECTED_FINDINGS_JSON" ] && EXPECTED_FINDINGS_JSON="[]"
-    ACTUAL_FINDINGS_JSON="$(jq -c '.findings // []' <<< "$PRE_EVAL_JSON" 2>/dev/null || echo "[]")"
-    [ -z "$ACTUAL_FINDINGS_JSON" ] && ACTUAL_FINDINGS_JSON="[]"
 
-    EMPTY_EXPECTED_GUARD=false
-    if [ "$EXPECTED_FINDINGS_JSON" = "[]" ] && [ "$KNOWN_MISS" = "false" ]; then
+    if [ $PRE_EC -ne 0 ] || [ -z "$PRE_EVAL_JSON" ] || ! jq -e . >/dev/null 2>&1 <<< "$PRE_EVAL_JSON"; then
       DETECTED=false
       PRECISE=false
-      EMPTY_EXPECTED_GUARD=true
+      PRE_EVAL_FAILED=true
     else
-      DETECTED_PRECISE_JSON="$(jq -n \
-        --argjson expected "${EXPECTED_FINDINGS_JSON}" \
-        --argjson actual "${ACTUAL_FINDINGS_JSON}" \
-        '{
-          detected: ($expected | all(.[]; . as $e | $actual | any(.[]; .rule == $e.rule and .severity == $e.severity))),
-          precise: ($actual | all(.[]; . as $a | $expected | any(.[]; .rule == $a.rule and .severity == $a.severity)))
-        }')"
+      ACTUAL_FINDINGS_JSON="$(jq -c '.findings // []' <<< "$PRE_EVAL_JSON" 2>/dev/null || echo "[]")"
+      [ -z "$ACTUAL_FINDINGS_JSON" ] && ACTUAL_FINDINGS_JSON="[]"
 
-      DETECTED="$(jq -r '.detected // "false"' <<< "$DETECTED_PRECISE_JSON")"
-      PRECISE="$(jq -r '.precise // "false"' <<< "$DETECTED_PRECISE_JSON")"
+      if [ "$EXPECTED_FINDINGS_JSON" = "[]" ]; then
+        DETECTED=false
+        if [ "$KNOWN_MISS" = "false" ]; then
+          PRECISE=false
+          EMPTY_EXPECTED_GUARD=true
+        else
+          if [ "$ACTUAL_FINDINGS_JSON" = "[]" ]; then
+            PRECISE=true
+          else
+            PRECISE=false
+          fi
+        fi
+      else
+        DETECTED_PRECISE_JSON="$(jq -n \
+          --argjson expected "${EXPECTED_FINDINGS_JSON}" \
+          --argjson actual "${ACTUAL_FINDINGS_JSON}" \
+          '{
+            detected: (($expected | map({rule, severity})) as $exp | ($actual | map({rule, severity})) as $act | (($exp | length > 0) and ($exp | group_by(.) | all(.[0] as $item | (length <= ($act | map(select(. == $item)) | length)))))),
+            precise: (($expected | map({rule, severity})) as $exp | ($actual | map({rule, severity})) as $act | ($act | group_by(.) | all(.[0] as $item | (length <= ($exp | map(select(. == $item)) | length)))))
+          }')"
+
+        DETECTED="$(jq -r '.detected // "false"' <<< "$DETECTED_PRECISE_JSON")"
+        PRECISE="$(jq -r '.precise // "false"' <<< "$DETECTED_PRECISE_JSON")"
+      fi
+
+      if [ "$NO_FINDINGS" = "false" ] && [ -n "$PRE_EVAL_JSON" ]; then
+        FINDINGS_TEXT="$(jq -r '
+          .findings // [] | map(
+            "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
+            (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
+            (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
+            (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
+            (if .message then "\n  Message: \(.message)" else "" end)
+          ) | join("\n\n")
+        ' <<< "$PRE_EVAL_JSON")"
+      fi
     fi
-
-    if [ "$NO_FINDINGS" = "false" ] && [ -n "$PRE_EVAL_JSON" ]; then
-      FINDINGS_TEXT="$(jq -r '
-        .findings // [] | map(
-          "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
-          (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
-          (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
-          (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
-          (if .message then "\n  Message: \(.message)" else "" end)
-        ) | join("\n\n")
-      ' <<< "$PRE_EVAL_JSON")"
-    fi
-
   elif [ "$KIND" = "eval-error" ]; then
     EXPECTED_ERROR="$(jq -r '.expectedError // ""' <<< "$SCENARIO_OBJ")"
     PRE_EVAL_ERR=""
@@ -357,7 +372,10 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   REPAIRED=false
   VERDICT_REASON=""
 
-  if [ "$ADAPTER_STATUS" = "completed" ]; then
+  if [ "${PRE_EVAL_FAILED:-false}" = "true" ]; then
+    REPAIRED=false
+    VERDICT_REASON="pre_eval_failed"
+  elif [ "$ADAPTER_STATUS" = "completed" ]; then
     if [ "${EMPTY_EXPECTED_GUARD:-false}" = "true" ]; then
       REPAIRED=false
       VERDICT_REASON="empty_expected"

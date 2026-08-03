@@ -23,7 +23,12 @@ fi
 
 WORKSPACE_DIR="$(cd "$1" && pwd -P)"
 
+# Use top-level scenario lock file for pin-parity with hermetic CI when running unlocked workspace subflakes.
+LOCK_FILE="${REPO_DIR}/fixtures/scenarios/flake.lock"
 OVERRIDE_ARGS=()
+if [ -f "${LOCK_FILE}" ]; then
+  OVERRIDE_ARGS+=(--reference-lock-file "${LOCK_FILE}")
+fi
 if [ -n "${DEN_DIR:-}" ]; then
   OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
 fi
