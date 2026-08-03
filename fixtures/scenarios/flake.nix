@@ -92,8 +92,17 @@
             # substring is asserted by the evidence runner's eval leg
             # (tools/evidence-runner/run.bash eval-error path).
             evalRes = builtins.tryEval (builtins.deepSeq (evalWorkspace workspaceDir) true);
-            cond = evalRes.success == false;
-            msg = "Expected evaluation error for scenario '${s.name}', but evaluation succeeded.";
+            # A goldenable eval-error scenario still ships a golden (the repaired
+            # tree); it must evaluate cleanly with zero findings even though the
+            # defective workspace is asserted to fail.
+            goldenRes =
+              if s.goldenable then
+                builtins.tryEval (builtins.deepSeq (evalWorkspace goldenDir) true)
+              else
+                { success = true; };
+            goldenClean = !s.goldenable || (evalWorkspace goldenDir).findings == [ ];
+            cond = evalRes.success == false && goldenRes.success && (goldenRes.success -> goldenClean);
+            msg = "Expected evaluation error for scenario '${s.name}' with a clean golden; workspace evaluated or golden failed/was not clean.";
           in
           {
             inherit (s) name;
@@ -118,17 +127,20 @@
               else
                 sortFindings actualFindings == sortFindings s.expectedFindings;
 
+            # The golden is the known-correct repair: it must re-analyze with zero
+            # findings of any severity (advisory included), or advisory false
+            # positives on clean configurations would pass CI undetected.
             goldenPass =
               if s.goldenable then
                 let
                   goldenDoc = evalWorkspace goldenDir;
                 in
-                goldenDoc.summary.gating == 0
+                goldenDoc.findings == [ ]
               else
                 true;
 
             cond = matchWorkspace && goldenPass;
-            msg = "Finding mismatch or golden gating finding failure for scenario '${s.name}'. Expected: ${builtins.toJSON s.expectedFindings}, Actual: ${builtins.toJSON actualFindings}";
+            msg = "Finding mismatch or golden finding failure for scenario '${s.name}'. Expected: ${builtins.toJSON s.expectedFindings}, Actual: ${builtins.toJSON actualFindings}";
           in
           {
             inherit (s) name;

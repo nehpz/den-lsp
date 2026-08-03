@@ -120,8 +120,9 @@ GOLDEN_NORM="$(jq "$NORM_JQ" <<< "${GOLDEN_RAW}")"
 MATCH="$(jq -n --argjson r "${REPAIRED_NORM}" --argjson g "${GOLDEN_NORM}" '$r == $g')"
 
 # Step 5: Clean Re-Analysis (cleanReanalysis)
-# (a) No gating findings in repaired analysis
-GATING_COUNT="$(jq '.summary.gating // 0' <<< "${REPAIRED_RAW}")"
+# (a) No findings of any severity in repaired analysis (advisory included) -
+#     matches the hermetic tier's zero-findings golden discipline.
+FINDING_COUNT="$(jq '.findings | length' <<< "${REPAIRED_RAW}")"
 
 # (b) None of the scenario expected finding rules still firing in repaired analysis
 EXPECTED_RULES_JSON="$(jq -c -n '$ARGS.positional' --args "${EXPECTED_RULES[@]+"${EXPECTED_RULES[@]}"}")"
@@ -130,7 +131,7 @@ EXPECTED_FIRING="$(jq -r --argjson rules "${EXPECTED_RULES_JSON}" '
 ' <<< "${REPAIRED_RAW}")"
 
 CLEAN_REANALYSIS=false
-if [ "${GATING_COUNT}" -eq 0 ] && [ "${EXPECTED_FIRING}" -eq 0 ]; then
+if [ "${FINDING_COUNT}" -eq 0 ] && [ "${EXPECTED_FIRING}" -eq 0 ]; then
   CLEAN_REANALYSIS=true
 fi
 
