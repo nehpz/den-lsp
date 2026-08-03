@@ -1,6 +1,6 @@
 # Granularity rule (advisory, AE6).
-# Detects over-fragmentation: >=3 declared aspects whose total content across all
-# emissions has leafCount == 1 and which declare no provides.
+# Detects over-fragmentation: >=3 declared aspects whose max leaves across any single
+# emission has leafCount == 1 and which declare no provides.
 { lib }:
 let
   util = import ./util.nix { inherit lib; };
@@ -28,10 +28,10 @@ in
       isSingleLeafNoProvides =
         aspName: aspectDef:
         let
-          totalLeaves = leavesForAspect aspName;
+          maxLeaves = leavesForAspect aspName;
           provides = builtins.filter (p: p != "__functor") (aspectDef.provides or [ ]);
         in
-        totalLeaves == 1 && provides == [ ];
+        maxLeaves == 1 && provides == [ ];
 
       matchingAspects = lib.filterAttrs isSingleLeafNoProvides declaredAspects;
       aspectNames = builtins.attrNames matchingAspects;

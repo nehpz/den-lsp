@@ -4,30 +4,35 @@ let
   validateScenario =
     manifest:
     if !(builtins.isAttrs manifest) then
-      throw "Scenario manifest must be an attrset"
-    else if !(manifest ? version) || manifest.version != 1 then
-      throw "Scenario manifest version must be 1"
-    else if !(manifest ? name) || !(builtins.isString manifest.name) || manifest.name == "" then
-      throw "Scenario manifest name must be a non-empty string"
-    else if !(manifest ? kind) || (manifest.kind != "finding" && manifest.kind != "eval-error") then
-      throw "Scenario manifest kind must be 'finding' or 'eval-error'"
-    else if !(manifest ? defect) || !(builtins.isString manifest.defect) then
-      throw "Scenario manifest defect must be a string"
-    else if !(manifest ? task) || !(builtins.isString manifest.task) then
-      throw "Scenario manifest task must be a string"
-    else if manifest.kind == "finding" && (!(manifest ? expectedFindings) || !(builtins.isList manifest.expectedFindings)) then
-      throw "Scenario manifest of kind 'finding' must specify an expectedFindings list"
-    else if manifest.kind == "eval-error" && (!(manifest ? expectedError) || !(builtins.isString manifest.expectedError) || manifest.expectedError == "") then
-      throw "Scenario manifest of kind 'eval-error' must specify a non-empty expectedError string"
-    else if !(manifest ? goldenable) || !(builtins.isBool manifest.goldenable) then
-      throw "Scenario manifest goldenable must be a boolean"
-    else if manifest.goldenable == false && (!(manifest ? exclusionReason) || !(builtins.isString manifest.exclusionReason) || manifest.exclusionReason == "") then
-      throw "Scenario manifest with goldenable=false requires a non-empty exclusionReason string"
-    else if !(manifest ? clearCut) || !(builtins.isBool manifest.clearCut) then
-      throw "Scenario manifest clearCut must be a boolean"
-    else if manifest ? heavy && !(builtins.isBool manifest.heavy) then
-      throw "Scenario manifest heavy must be a boolean"
+      throw "Scenario manifest must be an attrset (got ${builtins.typeOf manifest})"
     else
+      let
+        sName = if manifest ? name && builtins.isString manifest.name && manifest.name != "" then manifest.name else "<unknown>";
+        valOf = attr: if manifest ? ${attr} then builtins.toJSON manifest.${attr} else "missing";
+      in
+      if !(manifest ? version) || manifest.version != 1 then
+        throw "Scenario '${sName}' version must be 1 (got ${valOf "version"})"
+      else if !(manifest ? name) || !(builtins.isString manifest.name) || manifest.name == "" then
+        throw "Scenario manifest name must be a non-empty string (got ${valOf "name"})"
+      else if !(manifest ? kind) || (manifest.kind != "finding" && manifest.kind != "eval-error") then
+        throw "Scenario '${sName}' kind must be 'finding' or 'eval-error' (got ${valOf "kind"})"
+      else if !(manifest ? defect) || !(builtins.isString manifest.defect) then
+        throw "Scenario '${sName}' defect must be a string (got ${valOf "defect"})"
+      else if !(manifest ? task) || !(builtins.isString manifest.task) then
+        throw "Scenario '${sName}' task must be a string (got ${valOf "task"})"
+      else if manifest.kind == "finding" && (!(manifest ? expectedFindings) || !(builtins.isList manifest.expectedFindings)) then
+        throw "Scenario '${sName}' of kind 'finding' must specify an expectedFindings list (got ${valOf "expectedFindings"})"
+      else if manifest.kind == "eval-error" && (!(manifest ? expectedError) || !(builtins.isString manifest.expectedError) || manifest.expectedError == "") then
+        throw "Scenario '${sName}' of kind 'eval-error' must specify a non-empty expectedError string (got ${valOf "expectedError"})"
+      else if !(manifest ? goldenable) || !(builtins.isBool manifest.goldenable) then
+        throw "Scenario '${sName}' goldenable must be a boolean (got ${valOf "goldenable"})"
+      else if manifest.goldenable == false && (!(manifest ? exclusionReason) || !(builtins.isString manifest.exclusionReason) || manifest.exclusionReason == "") then
+        throw "Scenario '${sName}' with goldenable=false requires a non-empty exclusionReason string (got ${valOf "exclusionReason"})"
+      else if !(manifest ? clearCut) || !(builtins.isBool manifest.clearCut) then
+        throw "Scenario '${sName}' clearCut must be a boolean (got ${valOf "clearCut"})"
+      else if manifest ? heavy && !(builtins.isBool manifest.heavy) then
+        throw "Scenario '${sName}' heavy must be a boolean (got ${valOf "heavy"})"
+      else
       manifest // {
         knownMiss = manifest.knownMiss or false;
         heavy = manifest.heavy or false;

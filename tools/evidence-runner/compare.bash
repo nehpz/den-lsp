@@ -51,6 +51,17 @@ fi
 
 EVAL_SCRIPT="${SCRIPT_DIR}/eval-workspace.bash"
 
+emit_fail_json() {
+  local reason="$1"
+  jq -c -n \
+    --argjson match false \
+    --argjson cleanReanalysis false \
+    --arg verdict "FAIL" \
+    --arg reason "$reason" \
+    '{match: $match, cleanReanalysis: $cleanReanalysis, verdict: $verdict, reason: $reason}'
+  exit 1
+}
+
 # Step 1: Evaluate Repaired Workspace
 REPAIRED_RAW=""
 set +e
@@ -59,13 +70,7 @@ REPAIRED_EC=$?
 set -e
 
 if [ "${REPAIRED_EC}" -ne 0 ] || [ -z "${REPAIRED_RAW}" ]; then
-  jq -c -n \
-    --argjson match false \
-    --argjson cleanReanalysis false \
-    --arg verdict "FAIL" \
-    --arg reason "Repaired workspace failed evaluation" \
-    '{match: $match, cleanReanalysis: $cleanReanalysis, verdict: $verdict, reason: $reason}'
-  exit 1
+  emit_fail_json "Repaired workspace failed evaluation"
 fi
 
 # Step 2: Evaluate Golden Workspace
@@ -75,15 +80,8 @@ GOLDEN_EC=$?
 set -e
 
 if [ "${GOLDEN_EC}" -ne 0 ] || [ -z "${GOLDEN_RAW}" ]; then
-  jq -c -n \
-    --argjson match false \
-    --argjson cleanReanalysis false \
-    --arg verdict "FAIL" \
-    --arg reason "Golden workspace failed evaluation" \
-    '{match: $match, cleanReanalysis: $cleanReanalysis, verdict: $verdict, reason: $reason}'
-  exit 1
+  emit_fail_json "Golden workspace failed evaluation"
 fi
-
 # Step 3: Normalization (KTD6)
 NORM_JQ='
 def is_wrapper:

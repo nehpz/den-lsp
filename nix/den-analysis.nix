@@ -201,22 +201,32 @@ let
         callable = v ? __functor;
       };
 
+  safeDescription =
+    x:
+    if builtins.isAttrs x then
+      let
+        res = builtins.tryEval x.description;
+      in
+      if res.success then res.value else null
+    else
+      null;
+
   tryQuirks = builtins.tryEval den.quirks;
   rawQuirks =
     if tryQuirks.success then
       tryQuirks.value
     else
-      lib.genAttrs (builtins.attrNames (den.classes or { })) (k: {
-        description = "Colliding quirk";
+      lib.genAttrs (builtins.attrNames (den.classes or { })) (_: {
+        description = null;
       });
 
   registriesSnapshot = {
     structuralKeys = builtins.attrNames fxLib.keyClassification.structuralKeysSet;
     classes = builtins.mapAttrs (_: c: {
-      description = if builtins.isAttrs c && (builtins.tryEval c.description).success then c.description else null;
+      description = safeDescription c;
     }) (den.classes or { });
     quirks = builtins.mapAttrs (_: q: {
-      description = if builtins.isAttrs q && (builtins.tryEval q.description).success then q.description else null;
+      description = safeDescription q;
     }) rawQuirks;
     batteries = builtins.mapAttrs (_: aspectInfo) (den.batteries or { });
     aspects = builtins.mapAttrs (_: aspectInfo) (den.aspects or { });

@@ -16,11 +16,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.21.9
-      - name: Run nix flake check
+      - name: Run root flake check
         run: nix flake check
-      - name: Run hermetic scenario checks
+      - name: Run hermetic scenario check
         run: nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"
-      - name: Run fixture checks
+      - name: Run consumer fixture E2E
         run: fixtures/run-checks.bash
 
   flakehub-publish:

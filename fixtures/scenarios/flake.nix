@@ -78,8 +78,8 @@
             ''
         );
 
-      buildScenarioCheck =
-        pkgs: s:
+      evalScenarioCond =
+        s:
         let
           scenarioDir = ./. + "/${s.name}";
           workspaceDir = scenarioDir + "/workspace";
@@ -91,7 +91,10 @@
             cond = evalRes.success == false;
             msg = "Expected evaluation error for scenario '${s.name}', but evaluation succeeded.";
           in
-          checkCond pkgs "scenario-${s.name}" cond msg
+          {
+            inherit (s) name;
+            inherit cond msg;
+          }
         else
           let
             doc = evalWorkspace workspaceDir;
@@ -114,10 +117,18 @@
             cond = matchWorkspace && goldenPass;
             msg = "Finding mismatch or golden gating finding failure for scenario '${s.name}'. Expected: ${builtins.toJSON s.expectedFindings}, Actual: ${builtins.toJSON actualFindings}";
           in
-          checkCond pkgs "scenario-${s.name}" cond msg;
+          {
+            inherit (s) name;
+            inherit cond msg;
+          };
+
+      buildScenarioCheck = pkgs: evalRes: checkCond pkgs "scenario-${evalRes.name}" evalRes.cond evalRes.msg;
 
       nonHeavyScenarios = lib.filterAttrs (_: s: !s.heavy) scenarios;
       heavyScenarios = lib.filterAttrs (_: s: s.heavy) scenarios;
+
+      evaluatedNonHeavy = lib.mapAttrs (_: evalScenarioCond) nonHeavyScenarios;
+      evaluatedHeavy = lib.mapAttrs (_: evalScenarioCond) heavyScenarios;
     in
     {
       # Standard nix flake checks — excludes heavy scenarios.
@@ -127,8 +138,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         lib.mapAttrs' (
-          name: s: lib.nameValuePair "scenario-${name}" (buildScenarioCheck pkgs s)
-        ) nonHeavyScenarios
+          name: res: lib.nameValuePair "scenario-${name}" (buildScenarioCheck pkgs res)
+        ) evaluatedNonHeavy
       );
 
       # Heavy scenarios (e.g. fleet-scale) exposed under a separate attribute set
@@ -139,8 +150,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         lib.mapAttrs' (
-          name: s: lib.nameValuePair "scenario-${name}" (buildScenarioCheck pkgs s)
-        ) heavyScenarios
+          name: res: lib.nameValuePair "scenario-${name}" (buildScenarioCheck pkgs res)
+        ) evaluatedHeavy
       );
     };
 }

@@ -125,7 +125,19 @@ if [ -n "${DEN_DIR:-}" ]; then
   DEN_DIR_OVERRIDE=(--override-input den "${DEN_DIR}")
 fi
 
-SCENARIOS_JSON="$(nix eval --json --impure "${DEN_DIR_OVERRIDE[@]}" --expr "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix {}; in s.scenarios" 2>/dev/null | sed -n '/^{/,$p')"
+NIX_ERR_FILE="$(mktemp)"
+set +e
+SCENARIOS_JSON="$(nix eval --json --impure "${DEN_DIR_OVERRIDE[@]}" --expr "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix {}; in s.scenarios" 2>"$NIX_ERR_FILE" | sed -n '/^{/,$p')"
+NIX_EC=$?
+set -e
+
+if [ $NIX_EC -ne 0 ] || [ -z "$SCENARIOS_JSON" ]; then
+  echo "Error: Failed to evaluate scenarios via nix eval (exit code $NIX_EC):" >&2
+  cat "$NIX_ERR_FILE" >&2
+  rm -f "$NIX_ERR_FILE"
+  exit 1
+fi
+rm -f "$NIX_ERR_FILE"
 # Filter scenarios into a JSON array
 if [ -n "$TARGET_SCENARIO" ]; then
   FILTER_JQ="[ .[\"${TARGET_SCENARIO}\"] | select(. != null) ]"
@@ -176,12 +188,7 @@ run_with_timeout() {
 SCENARIO_COUNT="$(jq 'length' <<< "$SELECTED_SCENARIOS")"
 for ((i=0; i<SCENARIO_COUNT; i++)); do
   SCENARIO_OBJ="$(jq -c ".[$i]" <<< "$SELECTED_SCENARIOS")"
-  NAME="$(jq -r '.name' <<< "$SCENARIO_OBJ")"
-  KIND="$(jq -r '.kind' <<< "$SCENARIO_OBJ")"
-  CLEAR_CUT="$(jq -r '.clearCut' <<< "$SCENARIO_OBJ")"
-  KNOWN_MISS="$(jq -r '.knownMiss' <<< "$SCENARIO_OBJ")"
-  GOLDENABLE="$(jq -r '.goldenable' <<< "$SCENARIO_OBJ")"
-  TASK="$(jq -r '.task' <<< "$SCENARIO_OBJ")"
+  IFS=$'\t' read -r NAME KIND CLEAR_CUT KNOWN_MISS GOLDENABLE TASK <<< "$(jq -r '[.name, .kind, .clearCut, .knownMiss, .goldenable, .task] | @tsv' <<< "$SCENARIO_OBJ")"
 
   # Step 1: Materialize workspace
   TEMP_PARENT="$(cd "$(mktemp -d)" && pwd -P)"
@@ -208,7 +215,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   if [ "$KIND" = "finding" ]; then
     PRE_EVAL_JSON=""
     set +e
-    PRE_EVAL_JSON="$("${SCRIPT_DIR}/eval-workspace.bash" "${TEMP_WORKSPACE}" 2>/dev/null | sed -n '/^{/,$p')"
+    PRE_EVAL_JSON="$("${SCRIPT_DIR}/eval-workspace.bash" "${TEMP_WORKSPACE}" 2>/dev/null)"
     PRE_EC=$?
     set -e
     EXPECTED_FINDINGS_JSON="$(jq -c '.expectedFindings // []' <<< "$SCENARIO_OBJ" 2>/dev/null || echo "[]")"
@@ -365,7 +372,6 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   REPAIRED="${REPAIRED:-false}"
   WALL_CLOCK_SEC="${WALL_CLOCK_SEC:-0}"
   ADAPTER_TURNS="${ADAPTER_TURNS:-null}"
-  [ -z "$ADAPTER_TURNS" ] && ADAPTER_TURNS="null"
 
   # Step 6: Emit JSON metrics row
   jq -c -n \

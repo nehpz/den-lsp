@@ -81,7 +81,9 @@ READOUT="$(jq -r -s '
     end;
 
   . as $all |
-  ($all | map(select(.clearCut == true and .controlArm == false and .knownMiss == false))) as $cc |
+  def is_clear_cut: .clearCut == true and .controlArm == false and .knownMiss == false;
+
+  ($all | map(select(is_clear_cut))) as $cc |
   ($all | map(select(.knownMiss == true and .controlArm == false))) as $km |
   ($all | map(select(.controlArm == true))) as $ca |
 
@@ -91,8 +93,7 @@ READOUT="$(jq -r -s '
   ($cc | map(select(.repaired == true)) | length) as $rep_cnt |
 
   ($cc | map(select(.detected == false or .precise == false))) as $triage_rows |
-  (if ($det_cnt < $cc_len or $prec_cnt < $cc_len) then "NO-GO" else "GO" end) as $verdict |
-
+  (if ($triage_rows | length) > 0 then "NO-GO" else "GO" end) as $verdict |
   ($cc | map(.wallClockSec) | min) as $w_min |
   ($cc | map(.wallClockSec) | calc_median) as $w_med |
   ($cc | map(.wallClockSec) | max) as $w_max |
