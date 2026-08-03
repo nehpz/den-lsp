@@ -3,12 +3,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEN_DIR="${DEN_DIR:-/Users/stephen/Projects/rzpLABS/den}"
+DEN_DIR="${DEN_DIR:-}"
 
 SYSTEM="$(nix eval --impure --raw --expr builtins.currentSystem)"
 echo "Detected system: ${SYSTEM}"
-echo "Using den repo: ${DEN_DIR}"
-echo "Using den-lsp repo: ${REPO_DIR}"
+
+OVERRIDE_ARGS=()
+if [ -n "${DEN_DIR:-}" ]; then
+  echo "Using den repo override: ${DEN_DIR}"
+  OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
+else
+  echo "Using upstream den repo from flake input"
+fi
+echo "Using den-lsp repo override: ${REPO_DIR}"
+OVERRIDE_ARGS+=(--override-input den-lsp "${REPO_DIR}")
 echo
 
 FAILED=0
@@ -18,8 +26,7 @@ echo "==> Testing base fixture (nix build)..."
 set +e
 output=$(nix build "${REPO_DIR}/fixtures/consumer#checks.${SYSTEM}.den-lsp" \
   --no-link \
-  --override-input den "${DEN_DIR}" \
-  --override-input den-lsp "${REPO_DIR}" 2>&1)
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>&1)
 exit_code=$?
 set -e
 
@@ -35,8 +42,7 @@ fi
 echo "==> Testing base fixture app (nix run)..."
 set +e
 output=$(nix run "${REPO_DIR}/fixtures/consumer#den-lsp-check" \
-  --override-input den "${DEN_DIR}" \
-  --override-input den-lsp "${REPO_DIR}" 2>&1)
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>&1)
 exit_code=$?
 set -e
 
@@ -53,8 +59,7 @@ echo "==> Testing gating-dup variant..."
 set +e
 output=$(nix build "${REPO_DIR}/fixtures/consumer-variants/gating-dup#checks.${SYSTEM}.den-lsp" \
   --no-link \
-  --override-input den "${DEN_DIR}" \
-  --override-input den-lsp "${REPO_DIR}" 2>&1)
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>&1)
 exit_code=$?
 set -e
 
@@ -77,8 +82,7 @@ echo "==> Testing advisory-only variant..."
 set +e
 output=$(nix build "${REPO_DIR}/fixtures/consumer-variants/advisory-only#checks.${SYSTEM}.den-lsp" \
   --no-link \
-  --override-input den "${DEN_DIR}" \
-  --override-input den-lsp "${REPO_DIR}" 2>&1)
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>&1)
 exit_code=$?
 set -e
 
@@ -95,8 +99,7 @@ echo "==> Testing broken variant..."
 set +e
 output=$(nix build "${REPO_DIR}/fixtures/consumer-variants/broken#checks.${SYSTEM}.den-lsp" \
   --no-link \
-  --override-input den "${DEN_DIR}" \
-  --override-input den-lsp "${REPO_DIR}" 2>&1)
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>&1)
 exit_code=$?
 set -e
 
