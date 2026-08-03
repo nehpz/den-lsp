@@ -67,7 +67,12 @@ let
     kind = "finding";
     defect = "defect";
     task = "task";
-    expectedFindings = [ ];
+    expectedFindings = [
+      {
+        rule = "duplication";
+        severity = "gating";
+      }
+    ];
     goldenable = false;
     exclusionReason = "performance test";
     clearCut = false;
@@ -120,6 +125,22 @@ let
     complete = true;
   };
   invalidKindRejected = !(builtins.tryEval invalidKind).success;
+
+  emptyExpectedNonMiss = validateScenario {
+    version = 1;
+    name = "test";
+    kind = "finding";
+    defect = "defect";
+    task = "task";
+    expectedFindings = [ ];
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  # A non-known-miss finding scenario with no expected findings would make its
+  # hermetic detection check pass vacuously; the loader must reject it.
+  emptyExpectedNonMissRejected = !(builtins.tryEval emptyExpectedNonMiss).success;
 
   missingExpectedError = validateScenario {
     version = 1;
@@ -183,6 +204,7 @@ in
   scenario-loader-known-miss-allowed = knownMissAllowed;
   scenario-loader-incomplete-excluded = incompleteExcluded;
   scenario-loader-invalid-kind-rejected = invalidKindRejected;
+  scenario-loader-empty-expected-non-miss-rejected = emptyExpectedNonMissRejected;
   scenario-loader-missing-expected-error-rejected = missingExpectedErrorRejected;
   scenario-loader-non-list-expected-findings-rejected = nonListExpectedFindingsRejected;
   scenario-loader-missing-name-rejected = missingNameRejected;

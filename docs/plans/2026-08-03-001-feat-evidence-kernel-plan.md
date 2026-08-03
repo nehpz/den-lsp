@@ -376,7 +376,7 @@ Phase A: U1 (independent, lands first per KD8). Phase B: U2 → U3, U4, U5 (corp
 |---|---|---|
 | Engine + unit checks | `nix flake check` | Engine rules and loader tests green (U1, U2) |
 | Consumer E2E | `fixtures/run-checks.bash` | Variant fixtures behave (works without `DEN_DIR`) |
-| Hermetic scenario tier | `nix flake check path:fixtures/scenarios` | Detection + precision across the corpus, no LLM (U5) |
+| Hermetic scenario tier | `nix flake check path:fixtures/scenarios --override-input den-lsp "$PWD"` | Detection + precision across the corpus against the working tree, no LLM (U5) |
 | Runner smoke | `nix run .#evidence-runner -- run --adapter stub --set clear-cut` | Deterministic end-to-end loop incl. comparator (U6, U7) |
 | Readout gates | `nix run .#evidence-runner -- report` | 100% catch/precision enforcement, N>=5 floor, no-go path (U8) |
 

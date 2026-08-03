@@ -22,6 +22,8 @@ let
         throw "Scenario '${sName}' task must be a string (got ${valOf "task"})"
       else if manifest.kind == "finding" && (!(manifest ? expectedFindings) || !(builtins.isList manifest.expectedFindings)) then
         throw "Scenario '${sName}' of kind 'finding' must specify an expectedFindings list (got ${valOf "expectedFindings"})"
+      else if manifest.kind == "finding" && !(manifest.knownMiss or false) && manifest.expectedFindings == [ ] then
+        throw "Scenario '${sName}' of kind 'finding' with knownMiss=false must declare at least one expected finding - an empty list would make its detection check pass vacuously"
       else if manifest.kind == "eval-error" && (!(manifest ? expectedError) || !(builtins.isString manifest.expectedError) || manifest.expectedError == "") then
         throw "Scenario '${sName}' of kind 'eval-error' must specify a non-empty expectedError string (got ${valOf "expectedError"})"
       else if !(manifest ? goldenable) || !(builtins.isBool manifest.goldenable) then

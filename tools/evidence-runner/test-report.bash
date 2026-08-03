@@ -20,7 +20,7 @@ log_fail() {
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
-# Test 1: AE5 - One clear-cut row with detected=false -> NO-GO + triage section, exit 0 for render
+# Test 1: AE5 - One clear-cut row with detected=false -> NO-GO + triage section, nonzero exit (failed gate)
 TEST1_FILE="${TMP_DIR}/ae5_metrics.jsonl"
 cat << 'EOF' > "${TEST1_FILE}"
 {"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":false,"precise":true,"repaired":true,"verdictReason":"detected_miss","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
@@ -37,8 +37,8 @@ OUT1="$("${REPORT_BASH}" --in "${TEST1_FILE}" 2>&1)"
 EC1=$?
 set -e
 
-if [ $EC1 -eq 0 ] && grep -q "NO-GO" <<< "$OUT1" && grep -q "Tool-Bug Triage" <<< "$OUT1" && grep -q "s1" <<< "$OUT1"; then
-  log_pass "AE5 detected=false produces NO-GO + triage section with exit 0"
+if [ $EC1 -eq 2 ] && grep -q "NO-GO" <<< "$OUT1" && grep -q "Tool-Bug Triage" <<< "$OUT1" && grep -q "s1" <<< "$OUT1"; then
+  log_pass "AE5 detected=false produces NO-GO + triage section with gate-failing exit"
 else
   log_fail "AE5 detected=false" "exit code $EC1, output: $OUT1"
 fi

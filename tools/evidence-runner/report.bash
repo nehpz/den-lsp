@@ -186,3 +186,9 @@ if [ -n "$OUT_FILE" ]; then
   mkdir -p "$(dirname "$OUT_FILE")"
   printf "%s\n" "$READOUT" > "$OUT_FILE"
 fi
+
+# A NO-GO readout is a failed gate: exit nonzero so CI steps and scripts
+# that run this as a check actually block on the verdict.
+if printf "%s\n" "$READOUT" | grep -q "^## Verdict: NO-GO"; then
+  exit 2
+fi

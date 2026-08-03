@@ -27,6 +27,14 @@ jobs:
           tools/evidence-runner/test-compare.bash
           tools/evidence-runner/test-report.bash
           tools/evidence-runner/test-run.bash
+      - name: Run stub evidence sweep and readout gate
+        # Blocking E2E leg: exercises the full runner loop over the clear-cut
+        # corpus (including the eval-error scenarios' expectedError substring
+        # assertion, which the hermetic tier structurally cannot check) and
+        # gates on the readout's GO verdict.
+        run: |
+          tools/evidence-runner/run.bash --adapter stub --set clear-cut --out /tmp/ci-evidence-metrics.jsonl
+          tools/evidence-runner/report.bash --in /tmp/ci-evidence-metrics.jsonl
 
   flakehub-publish:
     name: Publish to FlakeHub
