@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: den-lsp Roadmap</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#fbfaf8; --ink:#1c1e21; --muted:#5b6069; --line:#e3e0da;
+  --accent:#0f6b5c; --accent-soft:#e7f2ef; --accent-text:#0b5548;
+  --warn:#9a5b00; --warn-soft:#faf0dd; --warn-text:#7a4a02;
+  --info:#33538f; --info-soft:#e9eef8; --info-text:#2a4472;
+  --card:#ffffff; --code-bg:#f1efe9;
+  font-size:16px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;
+  line-height:1.6;
+}
+main{max-width:900px; margin-inline:auto; padding:2.5rem 1.5rem 4rem}
+p,li,dd{max-width:70ch}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85em; background:var(--code-bg); padding:.1em .35em; border-radius:4px}
+a{color:var(--info)}
+h1{font-size:1.9rem; line-height:1.25; margin:.3rem 0 .6rem}
+h2{font-size:1.35rem; margin:2.6rem 0 .8rem; padding-top:1rem; border-top:1px solid var(--line)}
+h3{font-size:1.08rem; margin:1.6rem 0 .5rem}
+strong{color:inherit}
+.eyebrow{font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent-text); font-weight:600}
+header.doc-head{margin-bottom:1.6rem}
+.meta-strip{display:flex; flex-wrap:wrap; gap:.5rem 1.5rem; font-size:.85rem; color:var(--muted); margin-top:.4rem}
+.meta-strip b{color:var(--ink); font-weight:600}
+nav.jump{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:.9rem 1.2rem; margin:1.4rem 0; font-size:.92rem}
+nav.jump ol{margin:.4rem 0 0; padding-left:1.3rem}
+nav.jump li{margin:.15rem 0}
+.chips{display:flex; flex-wrap:wrap; gap:.4rem; margin:.5rem 0 0}
+.chip{display:inline-block; border-radius:999px; padding:.14em .7em; font-size:.74rem; font-weight:600; border:1px solid transparent}
+.chip.axis{background:var(--info-soft); color:var(--info-text)}
+.chip.conf{background:var(--accent-soft); color:var(--accent-text)}
+.chip.cx{background:var(--warn-soft); color:var(--warn-text)}
+.chip.rank{background:var(--ink); color:#fff}
+article.idea{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:1.3rem 1.5rem; margin:1.3rem 0}
+article.idea h3{margin-top:0}
+.feature{border-top:1px dashed var(--line); padding-top:.9rem; margin-top:1rem}
+.feature h4{margin:0 0 .3rem; font-size:.98rem}
+.feature .fmeta{font-size:.8rem; color:var(--muted); margin-bottom:.3rem}
+.basis{font-size:.88rem; background:var(--code-bg); border-radius:8px; padding:.55rem .8rem; margin:.5rem 0}
+.basis .tag{font-weight:700; color:var(--accent-text)}
+table{border-collapse:collapse; width:100%; font-size:.92rem; margin:1rem 0}
+th,td{border:1px solid var(--line); padding:.5rem .7rem; text-align:left; vertical-align:top}
+th{background:var(--code-bg); font-size:.8rem; letter-spacing:.06em; text-transform:uppercase}
+figure{margin:1.2rem 0; text-align:center}
+figcaption{font-size:.8rem; color:var(--muted); margin-top:.35rem}
+.callout{background:var(--info-soft); border-radius:10px; padding: .9rem 1.2rem; font-size:.93rem}
+.callout .eyebrow{color:var(--info-text)}
+footer.composition-signal{margin-top:3.5rem; padding-top:1rem; border-top:1px solid var(--line); font-size:.8rem; color:var(--muted)}
+svg text{font-family:Inter,-apple-system,sans-serif}
+</style>
+</head>
+<body>
+<main>
+
+<header class="doc-head">
+  <div class="eyebrow">Ideation</div>
+  <h1>den-lsp Roadmap — Focus Areas and the Operating Loop</h1>
+  <div class="meta-strip">
+    <span><b>Date</b> <time datetime="2026-08-03">2026-08-03</time></span>
+    <span><b>Topic</b> den-lsp-roadmap</span>
+    <span><b>Focus</b> roadmap derived from <a href="https://github.com/nehpz/den-lsp/blob/main/STRATEGY.md"><code>STRATEGY.md</code></a></span>
+    <span><b>Mode</b> repo-grounded</span>
+  </div>
+</header>
+
+<p>Four focus areas and an explicit operating loop, distilled from 42 raw candidates across five ideation frames, verified against the codebase, cut by adversarial review, and restructured after refinement. The governing principle: <strong>this is not a waterfall that perfects the tool in the lab and then meets reality</strong> — the lab exists only to prove one claim (existing fixtures produce findings agents actually resolve), after which the field becomes the primary evidence source. Sequencing is a bootstrap, not a lifecycle: CI gate → minimal evidence kernel → field readiness, then the loop runs.</p>
+
+<figure>
+<svg viewBox="0 0 800 250" width="100%" style="max-width:760px" role="img" aria-label="Operating loop: evidence kernel and field readiness feed an intake queue; work lands in repairs or coverage; proven changes return to evals and the field">
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5b6069"/></marker></defs>
+  <g font-size="12.5">
+    <!-- intake sources (left column) -->
+    <rect x="12" y="28" width="200" height="56" rx="9" fill="#e7f2ef" stroke="#0f6b5c"/>
+    <text x="112" y="52" text-anchor="middle" font-weight="600" fill="#0b5548">1 · Evidence kernel</text>
+    <text x="112" y="70" text-anchor="middle" fill="#0b5548" font-size="11">lab metrics on existing fixtures</text>
+
+    <rect x="12" y="160" width="200" height="56" rx="9" fill="#e7f2ef" stroke="#0f6b5c"/>
+    <text x="112" y="184" text-anchor="middle" font-weight="600" fill="#0b5548">2 · Field readiness</text>
+    <text x="112" y="202" text-anchor="middle" fill="#0b5548" font-size="11">real repos, real agents</text>
+
+    <!-- queue (middle) -->
+    <rect x="300" y="94" width="180" height="56" rx="9" fill="#fff" stroke="#e3e0da"/>
+    <text x="390" y="118" text-anchor="middle" font-weight="600">Intake queue</text>
+    <text x="390" y="136" text-anchor="middle" fill="#5b6069" font-size="11">highest-signal item next</text>
+
+    <!-- work (right) -->
+    <rect x="568" y="28" width="220" height="56" rx="9" fill="#fff" stroke="#e3e0da"/>
+    <text x="678" y="52" text-anchor="middle" font-weight="600">3 · Machine-actionable repairs</text>
+    <text x="678" y="70" text-anchor="middle" fill="#5b6069" font-size="11">structured fixes, locations</text>
+
+    <rect x="568" y="160" width="220" height="56" rx="9" fill="#fff" stroke="#e3e0da"/>
+    <text x="678" y="184" text-anchor="middle" font-weight="600">4 · Coverage expansion</text>
+    <text x="678" y="202" text-anchor="middle" fill="#5b6069" font-size="11">new evaluated-graph rules</text>
+
+    <!-- arrows: sources -> queue -->
+    <path d="M214 56 L298 108" fill="none" stroke="#5b6069" stroke-width="1.5" marker-end="url(#arr)"/>
+    <path d="M214 188 L298 136" fill="none" stroke="#5b6069" stroke-width="1.5" marker-end="url(#arr)"/>
+    <!-- arrows: queue -> work -->
+    <path d="M482 108 L566 60" fill="none" stroke="#5b6069" stroke-width="1.5" marker-end="url(#arr)"/>
+    <path d="M482 136 L566 188" fill="none" stroke="#5b6069" stroke-width="1.5" marker-end="url(#arr)"/>
+    <!-- return path: work -> evals/field (bottom loop) -->
+    <path d="M678 218 L678 240 L112 240 L112 218" fill="none" stroke="#0f6b5c" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="395" y="234" text-anchor="middle" fill="#0b5548" font-size="11">proven changes ship; new failures become fixtures</text>
+    <!-- label: field failures to kernel -->
+    <path d="M112 158 L112 86" fill="none" stroke="#0f6b5c" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="122" y="126" fill="#0b5548" font-size="11" text-anchor="start">failures → fixtures</text>
+  </g>
+</svg>
+<figcaption>The loop, not the list, is the roadmap: evals and the field are the two intake queues; repairs and coverage are the work they feed. Scheduling is demand-driven — pull the highest-signal item, not a fixed rotation.</figcaption>
+</figure>
+
+<h2 id="grounding-context">Grounding Context</h2>
+<p><strong>Codebase context.</strong> The pipeline is a vendored capture layer (<code>nix/den-analysis.nix</code>, Analysis IR v1) feeding a pure Nix rule engine (<code>nix/engine/</code>, 6 rules: 4 gating, 2 advisory) that emits a versioned findings document with prose-only <code>message</code>/<code>fix</code>/<code>docRef</code> fields. Two consumers: the flake check gate + <code>den-lsp-check</code> CLI, and a Rust tower-lsp server that spawns <code>nix eval --json</code> on save (300&thinsp;ms debounce, no subprocess timeout, no CodeAction support, location fallback to <code>flake.nix:0,0</code>). Track maturity: semantic quality <em>medium</em>, agent feedback loop <em>medium</em>, evaluation &amp; evidence <em>low</em> (no harness exists despite all four strategy metrics being harness-defined; CI publishes to FlakeHub without running tests), analysis contract <em>high/stable</em>.</p>
+<p><strong>Institutional memory.</strong> Deep serialization of emitted class modules is unsafe in pure Nix (missing-attribute errors are uncatchable by <code>tryEval</code>); emission stays lazy behind a <code>declared</code> flag; walking emit-class parameter context can explode on absent flake inputs; the analysis layer is vendored deliberately to work against stock den ≥ 0.18.0.</p>
+<p><strong>Field evidence.</strong> A sniff-test run against a real, agent-touched den repo surfaced multiple den-lsp bugs that clean lab fixtures never triggered — direct evidence that real-world configurations are the defect distribution that matters, and that field exposure cannot wait for lab polish.</p>
+<p><strong>External context.</strong> Nix-ecosystem linters (statix, nil, nixd, deadnix) are syntactic — the evaluated-graph position is uncontested. Adjacent prior art: policy-over-evaluated-config (OPA/conftest on Terraform plans, Kyverno, CUE). 2026 agent-tooling signal: "Actionable CI" pairs analysis with LLM-readable explanation and autofix; seeded-defect evaluation maps to mutation-testing prior art. For agent delivery, a JSON-emitting CLI beats a resident protocol server here: den-lsp's latency is dominated by <code>nix eval</code> (amortized by the eval cache across invocations, not by a daemon), and MCP's strengths — auth boundaries, stateful sessions — have no counterpart in this tool. No <code>docs/solutions/</code> learnings store exists yet.</p>
+
+<h2 id="topic-axes">Topic Axes</h2>
+<ul>
+  <li><strong>rule-coverage</strong> — what the engine can detect in the evaluated graph</li>
+  <li><strong>repair-guidance</strong> — fix-shaped findings, machine-actionable fixes, explanation quality</li>
+  <li><strong>feedback-delivery</strong> — LSP/CLI/check channels, eval speed, reliability</li>
+  <li><strong>measurement-harness</strong> — seeded-defect eval, metric tracking, regression evidence</li>
+  <li><strong>adoption-surface</strong> — injection mechanism, den compat, configuration, onboarding</li>
+</ul>
+
+<h2 id="ranked-ideas">Ranked Ideas</h2>
+<nav class="jump">
+  <div class="eyebrow">Focus areas (order = bootstrap sequence; steady state is the loop)</div>
+  <ol>
+    <li><a href="#f1">Evidence kernel — prove the fixtures, no more</a></li>
+    <li><a href="#f2">Field readiness — usable in the wild, early</a></li>
+    <li><a href="#f3">Machine-actionable repairs</a></li>
+    <li><a href="#f4">Coverage expansion</a></li>
+  </ol>
+</nav>
+
+<!-- ══════════════════════════ F1 ══════════════════════════ -->
+<article class="idea" id="f1">
+  <h3>1. Evidence kernel — prove the fixtures, no more</h3>
+  <div class="chips">
+    <span class="chip rank">Bootstrap 1</span>
+    <span class="chip axis">measurement-harness</span>
+    <span class="chip conf">Confidence 90%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+  <p><strong>Description:</strong> The minimum evaluation capability that proves one claim: the existing clear-cut fixtures produce findings a coding agent can actually resolve. Deliberately scoped to what already exists — hand-seeded fixtures, no mutation engine, no fixture factory. What the kernel teaches feeds Focus 4's rule design and is reinforced (or corrected) by field results.</p>
+  <div class="basis"><span class="tag">direct:</span> every STRATEGY.md metric is annotated "measured by the agent evaluation harness", yet the harness dossier records <em>no precision/recall metrics, no agent evaluation harness</em> — and <code>.github/workflows/ci.yml</code> publishes to FlakeHub without running any tests. The fixture variant-trigger mechanism and the synthetic-IR mutation pattern in <code>tests/fixtures/synthetic-ir.nix</code> are the existing raw material the kernel reuses.</div>
+  <p><strong>Rationale:</strong> There is high confidence that an agent receiving current findings can resolve them — but no proof. The kernel converts that belief into measured catch/precision/repair/time numbers on the fixtures we already trust, which is exactly the evidence needed to ship into the field with a straight face. Scope discipline is the point: a heavier harness would delay field evidence, and the field is the better defect generator (see Grounding Context).</p>
+  <p><strong>Downsides:</strong> Metrics over hand-picked fixtures overstate real-world performance — acceptable because the kernel's job is validating the fixtures, not characterizing the world; field intake (2c) supplies the realistic distribution.</p>
+
+  <div class="feature">
+    <h4>1a. CI gate: tests before FlakeHub publish</h4>
+    <div class="fmeta">Complexity: Low · unconditional first — day-one hygiene</div>
+    <p>Wire <code>tests/default.nix</code> and <code>fixtures/run-checks.bash</code> into CI and block <code>flakehub-push</code> on them. Today an engine-breaking commit ships to every consumer unvalidated.</p>
+  </div>
+  <div class="feature">
+    <h4>1b. Metrics runner over existing fixtures</h4>
+    <div class="fmeta">Complexity: Medium</div>
+    <p>A runner that takes the existing seeded fixtures, has an agent attempt resolution, and reports the four strategy metrics — catch rate, precision, repair success, time to valid repair — plus eval wall-time as a tracked performance budget. Output is a claim with numbers attached, not infrastructure.</p>
+  </div>
+  <div class="feature">
+    <h4>1c. Two-tier eval split</h4>
+    <div class="fmeta">Complexity: Low · keeps the loop affordable</div>
+    <p>Hermetic engine-only evals over synthetic IR (milliseconds, free) run in CI on every commit and guard the zero-false-positive discipline; agent-in-the-loop evals (LLM cost dominates) run on demand or nightly. The split keeps compute cost from distorting the loop's cadence.</p>
+  </div>
+</article>
+
+<!-- ══════════════════════════ F2 ══════════════════════════ -->
+<article class="idea" id="f2">
+  <h3>2. Field readiness — usable in the wild, early</h3>
+  <div class="chips">
+    <span class="chip rank">Bootstrap 2</span>
+    <span class="chip axis">adoption-surface</span>
+    <span class="chip axis">feedback-delivery</span>
+    <span class="chip conf">Confidence 85%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+  <p><strong>Description:</strong> Make den-lsp runnable against real repos by real agents as early as possible — because the field is the lab's best defect generator, not a launch milestone at the end. Three parts: frictionless entry, an agent-consumable CLI contract, and a deliberate pipeline that turns every field failure into a fixture.</p>
+  <div class="basis"><span class="tag">direct:</span> a sniff-test run against a real den repo surfaced multiple bugs that clean fixtures never triggered — lab experiments control variables; agent-touched real configurations are anything but clean. The adoption dossier documents the 2-step flake-module commitment as the only entry path; the delivery dossier documents that headless output is a text report agents must scrape, and <code>server/src/eval.rs</code> spawns <code>nix eval</code> with no timeout.</div>
+  <p><strong>Rationale:</strong> Promoted from last place after refinement: the original ranking treated distribution as something value must precede, but the sniff-test evidence inverts that — field exposure <em>produces</em> the evidence. Zero-touch injection additionally pays an engineering dividend: it's what lets the evidence kernel point at arbitrary un-instrumented repos. Absorbs the surviving value of the dropped MCP focus as plain CLI affordances (see Rejection Summary).</p>
+  <p><strong>Downsides:</strong> Early field exposure means early field bug reports against a young tool — mitigated by the kernel's proof that the core findings are sound before going wide; suppressions are deliberately deferred until field evidence shows where legitimate exceptions actually occur.</p>
+
+  <div class="feature">
+    <h4>2a. Zero-touch ephemeral analysis injection</h4>
+    <div class="fmeta">Complexity: Medium</div>
+    <p>Synthesize the injection wrapper at invocation time (<code>nix eval --expr</code>) so den-lsp analyzes any stock Den flake — no flake input, no committed module. Try-before-adopt for consumers; arbitrary-repo analysis for the kernel and for sniff tests.</p>
+  </div>
+  <div class="feature">
+    <h4>2b. Agent-consumable CLI contract</h4>
+    <div class="fmeta">Complexity: Low–Medium · absorbs the dropped MCP focus</div>
+    <p><code>den-lsp-check --json</code> with a stable findings schema and exit semantics (the machine-readable channel for Focus 3's structured payloads), plus <code>--draft</code>/<code>--gate</code> strictness flags so gating findings advise mid-draft and block at the pre-completion checkpoint — ephemeral flags, no repo config, preserving the zero-knob stance.</p>
+  </div>
+  <div class="feature">
+    <h4>2c. Field-failure intake and reliability floor</h4>
+    <div class="fmeta">Complexity: Medium · the flywheel coupling</div>
+    <p>Every real-world breakage — crash, wrong finding, hang — becomes a fixture in the eval corpus by convention, feeding the kernel the realistic defect distribution hand-seeding can't produce. Includes the reliability floor field use demands: tokio deadlines on <code>nix eval</code>, cancellation of superseded evaluations, timeout surfaced as a finding rather than a silent hang.</p>
+  </div>
+</article>
+
+<!-- ══════════════════════════ F3 ══════════════════════════ -->
+<article class="idea" id="f3">
+  <h3>3. Machine-actionable repairs</h3>
+  <div class="chips">
+    <span class="chip rank">Loop</span>
+    <span class="chip axis">repair-guidance</span>
+    <span class="chip conf">Confidence 85%</span>
+    <span class="chip cx">Complexity Medium–High</span>
+  </div>
+  <p><strong>Description:</strong> Move findings from "prose a model must interpret" to "edits a model can apply": structured fix payloads in the findings document, and precise source locations so the fix lands in the right file. Runs inside the loop, prioritized by what kernel metrics and field intake show agents actually failing to repair.</p>
+  <div class="basis"><span class="tag">direct:</span> <code>nix/engine/document.nix</code> defines <code>fix</code> as a freeform prose string; the repair-guidance dossier confirms no CodeAction handlers and no structured replacement type exist, and <code>server/src/diagnostics.rs:56-60</code> falls back to <code>flake.nix:0,0</code> when position data is missing — agents are sometimes told the right fix in the wrong file. Five of five ideation frames converged on structured fixes.</div>
+  <p><strong>Rationale:</strong> Two of the four strategy metrics — successful repair rate and time to valid repair — are decided at this layer, and unlike the kernel this ships value into real repos the day it lands. The stable findings-document version field makes this a clean v2 evolution. The dry-run repair loop (apply candidate fix in an isolated eval, confirm the finding resolves) is deferred until kernel repair-rate data shows one-shot structured fixes aren't sufficient — it's the escalation, not the starting point.</p>
+  <p><strong>Downsides:</strong> Location resolution (3b) is the hard part — mapping evaluated-graph findings back through Nix source — and structured fixes without reliable ranges are worse than prose, so 3b gates 3a's range-based payloads (template payloads can ship first).</p>
+
+  <div class="feature">
+    <h4>3a. Findings v2: structured <code>suggestedFix</code> + LSP CodeActions</h4>
+    <div class="fmeta">Complexity: Medium · 5× frame convergence</div>
+    <p>Extend the findings schema with machine-actionable payloads — <code>{file, range, replacementText}</code> or a complete ready-to-paste Nix template — alongside the existing prose. Surface via <code>textDocument/codeAction</code> for editors and via the 2b JSON contract for agents.</p>
+  </div>
+  <div class="feature">
+    <h4>3b. AST-mapped location resolution</h4>
+    <div class="fmeta">Complexity: Medium–High · prerequisite for range-based fixes</div>
+    <p>Parse consumer aspect files with <code>rnix</code> on the Rust side and map evaluated attribute paths (e.g. <code>den.aspects.web.nixos.services.openssh</code>) to exact line/column ranges — eliminating the <code>flake.nix:0,0</code> fallback that misdirects agents into editing the wrong file.</p>
+  </div>
+</article>
+
+<!-- ══════════════════════════ F4 ══════════════════════════ -->
+<article class="idea" id="f4">
+  <h3>4. Coverage expansion</h3>
+  <div class="chips">
+    <span class="chip rank">Loop</span>
+    <span class="chip axis">rule-coverage</span>
+    <span class="chip conf">Confidence 75%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+  <p><strong>Description:</strong> Grow what the engine can see, starting with the IR fields the capture layer already produces but no rule reads. Rule selection is driven by the loop — kernel learnings and field-intake fixtures identify which defect classes real agents actually produce — rather than by what's easiest to detect.</p>
+  <div class="basis"><span class="tag">direct:</span> the rule-coverage dossier catalogs captured-but-unused IR v1 fields — <code>ctxTrace</code>, <code>scopes</code> (parent/entityKind/contextKeys), entry lifecycle flags (<code>excluded</code>, <code>excludedFrom</code>, <code>replacedBy</code>), <code>homes</code>, registry metadata — while all six rules read none of them. Four frames converged on mining these fields.</div>
+  <p><strong>Rationale:</strong> Catch rate ultimately depends on what rules can see, and the cheapest expansion needs zero capture-layer changes. Lifecycle rules target the strategy's motivating scenario exactly: an aspect silently displaces another, the build passes, intended behavior vanishes. Every new rule lands with its seeded fixtures and a measured precision line through the kernel (1c's hermetic tier makes this free) — that convention is what lets coverage grow without eroding the zero-false-positive discipline. Schema-derived rule synthesis stays parked until hand-written rules stall.</p>
+  <p><strong>Downsides:</strong> Each new gating rule risks precision regressions and adds agent burden if its repair guidance lags — which is why coverage rides the loop behind repairs rather than racing ahead of them.</p>
+
+  <div class="feature">
+    <h4>4a. Rules mining unused IR fields: scope + lifecycle defects</h4>
+    <div class="fmeta">Complexity: Medium · zero IR changes needed</div>
+    <p>Scope-mismatch rules from <code>scopes</code>/<code>ctxTrace</code> (e.g. home-manager options emitted under a NixOS host scope) and displacement rules from <code>excluded</code>/<code>replacedBy</code> (silently dropped capabilities, orphaned dependents).</p>
+  </div>
+  <div class="feature">
+    <h4>4b. Registry-metadata-enriched findings &amp; hover</h4>
+    <div class="fmeta">Complexity: Low–Medium</div>
+    <p>Pipe captured registry descriptions/provides/callable signatures into finding explanations and hover cards, so the "why" and the "what instead" arrive with the finding — zero configuration, better repair context.</p>
+  </div>
+</article>
+
+<h2 id="rejection-summary">Rejection Summary</h2>
+<p>42 raw ideas → 19 deduped candidates + 3 cross-frame syntheses → refined after review into 4 focus areas / 10 features. A fresh-context verifier spot-checked every basis against the repo (16 sound, 6 weak, 0 refuted). Rejections first, then items deferred by the refinement pass (deliberately out of the near-term, not discarded).</p>
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>MCP diagnostic server (formerly its own focus area)</td><td>A JSON CLI is cheaper and easier for agents (no per-session tool-schema token cost); den-lsp's latency is <code>nix eval</code>-bound, which the eval cache amortizes without a resident server; MCP's discriminating strengths (auth boundaries, stateful sessions) have no counterpart here. Surviving value redistributed: validate verb + strictness flags → 2b, timeout guard → 2c. A thin MCP wrapper over the CLI stays cheap to add later if an agent runtime demands it.</td></tr>
+    <tr><td>2</td><td>Unsaved-buffer analysis (overlay eval / tree-sitter pre-filter)</td><td>Nix evaluates on-disk state, making buffer-overlay eval impractical; the primary user (coding agents) edits via disk writes anyway — high complexity serving the secondary persona.</td></tr>
+    <tr><td>3</td><td>Provides/intent conformance rule ("negative selection")</td><td>Basis undermined by pure-Nix safety limits: deep emission inspection risks uncatchable missing-attribute errors (institutional memory concurs with verifier).</td></tr>
+    <tr><td>4</td><td>Analysis IR as open ecosystem standard</td><td>Premature abstraction while den-lsp is the IR's sole consumer; revisit if external tooling demand appears.</td></tr>
+    <tr><td>5</td><td>Native Rust IR rule evaluator</td><td>Dual-maintenance hazard against the pure-Nix engine as single source of truth; performance case unproven.</td></tr>
+    <tr><td>6</td><td>Global ecosystem aspect-graph index</td><td>Heavy infrastructure out of scope for single-repo semantic analysis.</td></tr>
+    <tr><td>7</td><td>Consumer CI telemetry loop</td><td>Privacy/network complexity inappropriate for a local tool; field-failure intake (2c) supplies the same learning signal first-party.</td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>#</th><th>Deferred item</th><th>Re-entry trigger</th></tr></thead>
+  <tbody>
+    <tr><td>D1</td><td>Defect mutation engine (automated fixture synthesis)</td><td>Pulled into the loop when hand-seeding plus field-failure intake stop keeping the eval corpus ahead of rule development.</td></tr>
+    <tr><td>D2</td><td>Dry-run repair loop (propose → isolated eval → confirm)</td><td>Pulled in when kernel repair-rate data shows one-shot structured fixes leave a meaningful residue of failed repairs.</td></tr>
+    <tr><td>D3</td><td>Schema-derived rule synthesis from Den registry metadata</td><td>Pulled in when hand-written rules stall against Den's evolution rate.</td></tr>
+    <tr><td>D4</td><td>Auditable finding suppressions (<code># den-lsp:ignore</code>)</td><td>Pulled in when field usage demonstrates where legitimate gating exceptions actually occur — designing the escape hatch before seeing real exceptions risks aiming it wrong.</td></tr>
+  </tbody>
+</table>
+<p>Axis note: feedback-delivery no longer has a dedicated focus area; its surviving items (CLI contract, strictness flags, timeout/cancellation) live inside Field readiness (2b, 2c). All five axes remain covered across the feature set.</p>
+
+<footer class="composition-signal">Composed 2026-08-03 by ce-ideate from <code>STRATEGY.md</code> and repo evidence dossiers (run a3f81c2e); revised 2026-08-03 after refinement discussion · <a href="https://github.com/nehpz/den-lsp">github.com/nehpz/den-lsp</a></footer>
+
+</main>
+</body>
+</html>
