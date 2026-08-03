@@ -9,16 +9,42 @@ SYSTEM="$(nix eval --impure --raw --expr builtins.currentSystem)"
 echo "Detected system: ${SYSTEM}"
 
 # Pin parity: reference scenarios lockfile so unlocked consumer flakes use identical pinned dependencies (den, nixpkgs, flake-parts) as hermetic tests.
+# Reference lock alone is insufficient because Nix reuses a locked node only when the flake's declared original ref
+# matches the reference lock's original ref. Workspace/consumer fixtures declare bare github:denful/den while scenarios
+# specify github:denful/den/v0.18.0 (and nixpkgs original refs also differ), causing Nix to float unpinned inputs.
+LOCK_FILE="${REPO_DIR}/fixtures/scenarios/flake.lock"
 OVERRIDE_ARGS=()
-if [ -f "${REPO_DIR}/fixtures/scenarios/flake.lock" ]; then
-  echo "Using reference lock file: ${REPO_DIR}/fixtures/scenarios/flake.lock"
-  OVERRIDE_ARGS+=(--reference-lock-file "${REPO_DIR}/fixtures/scenarios/flake.lock")
-fi
-if [ -n "${DEN_DIR:-}" ]; then
-  echo "Using den repo override: ${DEN_DIR}"
-  OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
+if [ -f "${LOCK_FILE}" ]; then
+  echo "Using reference lock file: ${LOCK_FILE}"
+  OVERRIDE_ARGS+=(--reference-lock-file "${LOCK_FILE}")
+
+  NIXPKGS_OVERRIDE=$(jq -r '.nodes[.root].inputs.nixpkgs as $n | .nodes[$n].locked | select(. != null) | if .type == "github" and (.owner != null and .repo != null and .rev != null) then "github:" + .owner + "/" + .repo + "/" + .rev elif (.type == "tarball" or .type == "flakehub") and (.url != null and .url != "") then .url else empty end' "${LOCK_FILE}" 2>/dev/null || true)
+  if [ -n "${NIXPKGS_OVERRIDE}" ]; then
+    echo "Using locked nixpkgs override: ${NIXPKGS_OVERRIDE}"
+    OVERRIDE_ARGS+=(--override-input nixpkgs "${NIXPKGS_OVERRIDE}")
+  else
+    echo "Skipping nixpkgs override: unsupported locked type or missing URL in reference lock"
+  fi
+
+  if [ -n "${DEN_DIR:-}" ]; then
+    echo "Using den repo override: ${DEN_DIR}"
+    OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
+  else
+    DEN_REV=$(jq -r '.nodes[.root].inputs.den as $n | .nodes[$n].locked | select(. != null) | .rev // empty' "${LOCK_FILE}" 2>/dev/null || true)
+    if [ -n "${DEN_REV}" ]; then
+      echo "Using locked den override: github:denful/den/${DEN_REV}"
+      OVERRIDE_ARGS+=(--override-input den "github:denful/den/${DEN_REV}")
+    else
+      echo "Using upstream den repo from flake input"
+    fi
+  fi
 else
-  echo "Using upstream den repo from flake input"
+  if [ -n "${DEN_DIR:-}" ]; then
+    echo "Using den repo override: ${DEN_DIR}"
+    OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
+  else
+    echo "Using upstream den repo from flake input"
+  fi
 fi
 echo "Using den-lsp repo override: ${REPO_DIR}"
 OVERRIDE_ARGS+=(--override-input den-lsp "${REPO_DIR}")

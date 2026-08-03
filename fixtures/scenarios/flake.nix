@@ -59,6 +59,16 @@
               nixpkgs = inputs.nixpkgs;
             };
           } {
+            # `systems` has no flake-parts default. Nothing here forces a
+            # perSystem-derived value today (only flake.den-lsp-analysis is
+            # read), but set it explicitly so a future flake-parts or check
+            # change cannot break every scenario at once with a confusing
+            # "option `systems` is used but not defined" error.
+            systems = [
+              "x86_64-linux"
+              "aarch64-linux"
+              "aarch64-darwin"
+            ];
             imports = [
               den.flakeModules.default
               den-lsp.flakeModules.default

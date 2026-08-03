@@ -166,6 +166,28 @@ if [ $EC6 -eq 0 ] && grep -q "Skipped 1 malformed JSONL line" <<< "$OUT6" && gre
 else
   log_fail "Malformed JSONL lines test failed" "Output:\n${OUT6}"
 fi
+# Test 7: Incomplete sweep refusal (meta says 5, only 4 rows -> refusal + nonzero exit)
+TEST7_FILE="${TMP_DIR}/incomplete_metrics.jsonl"
+cat << 'EOF' > "${TEST7_FILE}"
+{"sweepMeta":true,"selected":5,"adapter":"stub","set":"clear-cut"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+EOF
+
+OUT7=""
+EC7=0
+set +e
+OUT7="$("${REPORT_BASH}" --in "${TEST7_FILE}" 2>&1)"
+EC7=$?
+set -e
+
+if [ $EC7 -ne 0 ] && grep -q "INCOMPLETE SWEEP" <<< "$OUT7"; then
+  log_pass "Incomplete sweep refusal triggers with nonzero exit when row count mismatches sweepMeta.selected"
+else
+  log_fail "Incomplete sweep refusal" "exit code $EC7, output: $OUT7"
+fi
 
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 

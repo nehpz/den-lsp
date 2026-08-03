@@ -20,6 +20,7 @@ log_fail() {
 check_schema() {
   local file="$1"
   jq -e '
+    select(.sweepMeta != true) |
     has("scenario") and
     has("kind") and
     has("clearCut") and
@@ -48,12 +49,16 @@ EC1=$?
 set -e
 
 if [ $EC1 -eq 0 ] && [ -f "${TEST1_OUT}" ] && check_schema "${TEST1_OUT}" && \
-   [ "$(jq -r '.repaired' "${TEST1_OUT}")" = "true" ] && \
-   [ "$(jq -r '.scenario' "${TEST1_OUT}")" = "base-gating-dup" ] && \
-   [ "$(jq -r '.adapter' "${TEST1_OUT}")" = "stub" ] && \
-   [ "$(jq -r '.controlArm' "${TEST1_OUT}")" = "false" ] && \
-   [ "$(jq -r '.verdictReason' "${TEST1_OUT}")" = "match_and_clean" ]; then
-  log_pass "Stub golden mode -> repaired=true"
+   [ "$(jq -r 'select(.sweepMeta != true) | .repaired' "${TEST1_OUT}")" = "true" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .scenario' "${TEST1_OUT}")" = "base-gating-dup" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .adapter' "${TEST1_OUT}")" = "stub" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .controlArm' "${TEST1_OUT}")" = "false" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .verdictReason' "${TEST1_OUT}")" = "match_and_clean" ] && \
+   [ "$(jq -r 'select(.sweepMeta == true) | .selected' "${TEST1_OUT}")" = "1" ] && \
+   [ -f "${TEST1_OUT%.jsonl}-artifacts/base-gating-dup/prompt.txt" ] && \
+   [ -f "${TEST1_OUT%.jsonl}-artifacts/base-gating-dup/transcript.log" ] && \
+   [ -f "${TEST1_OUT%.jsonl}-artifacts/base-gating-dup/adapter_stderr.log" ]; then
+  log_pass "Stub golden mode -> repaired=true, sweepMeta emitted, artifacts persisted"
 else
   log_fail "Stub golden mode -> repaired=true" "Exit code $EC1 or metrics mismatch"
 fi
@@ -67,7 +72,7 @@ EC2=$?
 set -e
 
 if [ $EC2 -eq 0 ] && [ -f "${TEST2_OUT}" ] && check_schema "${TEST2_OUT}" && \
-   [ "$(jq -r '.repaired' "${TEST2_OUT}")" = "false" ]; then
+   [ "$(jq -r 'select(.sweepMeta != true) | .repaired' "${TEST2_OUT}")" = "false" ]; then
   log_pass "Stub delete mode -> repaired=false"
 else
   log_fail "Stub delete mode -> repaired=false" "Exit code $EC2 or metrics mismatch"
@@ -82,8 +87,8 @@ EC3=$?
 set -e
 
 if [ $EC3 -eq 0 ] && [ -f "${TEST3_OUT}" ] && check_schema "${TEST3_OUT}" && \
-   [ "$(jq -r '.repaired' "${TEST3_OUT}")" = "false" ] && \
-   [ "$(jq -r '.verdictReason' "${TEST3_OUT}")" = "garbage_output" ]; then
+   [ "$(jq -r 'select(.sweepMeta != true) | .repaired' "${TEST3_OUT}")" = "false" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .verdictReason' "${TEST3_OUT}")" = "garbage_output" ]; then
   log_pass "Stub garbage mode -> repaired=false with verdictReason=garbage_output"
 else
   log_fail "Stub garbage mode -> repaired=false with verdictReason=garbage_output" "Exit code $EC3 or metrics mismatch"
@@ -98,8 +103,8 @@ EC4=$?
 set -e
 
 if [ $EC4 -eq 0 ] && [ -f "${TEST4_OUT}" ] && check_schema "${TEST4_OUT}" && \
-   [ "$(jq -r '.controlArm' "${TEST4_OUT}")" = "true" ] && \
-   [ "$(jq -r '.repaired' "${TEST4_OUT}")" = "true" ]; then
+   [ "$(jq -r 'select(.sweepMeta != true) | .controlArm' "${TEST4_OUT}")" = "true" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .repaired' "${TEST4_OUT}")" = "true" ]; then
   log_pass "Stub mode with --no-findings -> controlArm=true"
 else
   log_fail "Stub mode with --no-findings -> controlArm=true" "Exit code $EC4 or metrics mismatch"

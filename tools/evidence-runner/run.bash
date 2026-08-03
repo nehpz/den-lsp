@@ -15,8 +15,8 @@ if [ -z "${REPO_DIR:-}" ] || [ ! -f "${REPO_DIR}/fixtures/scenarios/lib.nix" ]; 
   fi
 fi
 export REPO_DIR="${REPO_DIR}"
-# Ensure PATH includes host directories for agent CLIs (e.g. claude, omp)
-export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin"
+# Host directories for agent CLIs (e.g. claude, omp), applied only to adapter invocation
+ADAPTER_PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin"
 
 NIX_ERR_FILE=""
 CURRENT_TEMP_PARENT=""
@@ -207,7 +207,15 @@ run_with_timeout() {
 # Start each sweep from a clean slate: stale rows from a previous run would
 # double-count scenarios in the readout and can flip its verdict.
 : > "$OUT_FILE"
+ARTIFACTS_DIR="${OUT_FILE%.jsonl}-artifacts"
+rm -rf "${ARTIFACTS_DIR}"
+mkdir -p "${ARTIFACTS_DIR}"
 
+jq -c -n \
+  --argjson selected "$NUM_SELECTED" \
+  --arg adapter "$ADAPTER_NAME" \
+  --arg set "$SET_NAME" \
+  '{sweepMeta: true, selected: $selected, adapter: $adapter, set: $set}' >> "$OUT_FILE"
 # Process each scenario sequentially
 SCENARIO_COUNT="$(jq 'length' <<< "$SELECTED_SCENARIOS")"
 for ((i=0; i<SCENARIO_COUNT; i++)); do
@@ -333,6 +341,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   export PROMPT_FILE="${PROMPT_FILE}"
   export MAX_TURNS="${MAX_TURNS}"
   export TRANSCRIPT_FILE="${TEMP_PARENT}/transcript.log"
+  touch "${TRANSCRIPT_FILE}"
 
   GOLDEN_DIR_PATH="${SCENARIO_SRC_DIR}/golden"
   if [ "$ADAPTER_NAME" = "stub" ]; then
@@ -344,9 +353,9 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   ADAPTER_OUT=""
   set +e
   if [ "$ADAPTER_NAME" = "stub" ]; then
-    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
   else
-    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env -u REPO_DIR -u GOLDEN_DIR "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env -u REPO_DIR -u GOLDEN_DIR PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
   fi
   ADAPTER_EC=$?
   set -e
@@ -480,6 +489,13 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
       turns: $turns,
       timestamp: $timestamp
     }' >> "$OUT_FILE"
+  SCENARIO_ARTIFACTS_DIR="${OUT_FILE%.jsonl}-artifacts/${NAME}"
+  mkdir -p "${SCENARIO_ARTIFACTS_DIR}"
+  for artifact_file in prompt.txt transcript.log adapter_stderr.log; do
+    if [ -f "${TEMP_PARENT}/${artifact_file}" ]; then
+      cp "${TEMP_PARENT}/${artifact_file}" "${SCENARIO_ARTIFACTS_DIR}/${artifact_file}"
+    fi
+  done
 
   rm -rf "${TEMP_PARENT}"
   CURRENT_TEMP_PARENT=""
