@@ -23,6 +23,23 @@
       checks = lib.mapAttrs' (
         name: cond: lib.nameValuePair "engine-${name}" (checkCond name cond)
       ) engineTests;
+      apps.evidence-runner = {
+        type = "app";
+        program = "${pkgs.writeShellApplication {
+          name = "evidence-runner";
+          runtimeInputs = [
+            pkgs.jq
+            pkgs.git
+            pkgs.coreutils
+            pkgs.nix
+          ];
+          text = ''
+            # writeShellApplication resets PATH to runtimeInputs; append host PATH inside the script so host agent CLIs stay reachable
+            exec ${../tools/evidence-runner}/run.bash "$@"
+          '';
+        }}/bin/evidence-runner";
+      };
+
 
       packages.den-lsp-server = pkgs.rustPlatform.buildRustPackage {
         pname = "den-lsp-server";

@@ -35,9 +35,22 @@ let
         exclusionReason = manifest.exclusionReason or null;
       };
 
+  filterAttrs =
+    if builtins ? filterAttrs then
+      builtins.filterAttrs
+    else if lib != null && lib ? filterAttrs then
+      lib.filterAttrs
+    else
+      pred: set:
+      builtins.listToAttrs (
+        builtins.concatMap (
+          name: if pred name set.${name} then [ { inherit name; value = set.${name}; } ] else [ ]
+        ) (builtins.attrNames set)
+      );
+
   dirEntries = builtins.readDir ./.;
   subdirNames = builtins.attrNames (
-    builtins.filterAttrs (
+    filterAttrs (
       name: type: type == "directory" && builtins.pathExists (./. + "/${name}/scenario.nix")
     ) dirEntries
   );
