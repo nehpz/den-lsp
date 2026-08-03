@@ -109,11 +109,18 @@
             # defective workspace is asserted to fail.
             goldenRes =
               if s.goldenable then
-                builtins.tryEval (builtins.deepSeq (evalWorkspace goldenDir) true)
+                builtins.tryEval (
+                  let
+                    fs = (evalWorkspace goldenDir).findings;
+                  in
+                  builtins.deepSeq fs fs
+                )
               else
-                { success = true; };
-            goldenClean = !s.goldenable || (evalWorkspace goldenDir).findings == [ ];
-            cond = evalRes.success == false && goldenRes.success && (goldenRes.success -> goldenClean);
+                {
+                  success = true;
+                  value = [ ];
+                };
+            cond = evalRes.success == false && goldenRes.success && goldenRes.value == [ ];
             msg = "Expected evaluation error for scenario '${s.name}' with a clean golden; workspace evaluated or golden failed/was not clean.";
           in
           {
