@@ -46,7 +46,9 @@
             else
               [ ];
         in
-        triggerMod ++ moduleFiles;
+        # Workspace flakes import modules/*.nix before trigger.nix; keep the
+        # hermetic tier on the same order so merge-tie behavior cannot drift.
+        moduleFiles ++ triggerMod;
 
       evalWorkspace =
         dir:
@@ -73,7 +75,7 @@
           else
             ''
               echo "scenario check failed: ${name}" >&2
-              echo "${msg}" >&2
+              echo ${pkgs.lib.escapeShellArg msg} >&2
               exit 1
             ''
         );

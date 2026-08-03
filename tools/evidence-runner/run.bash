@@ -436,6 +436,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   # Ensure safe defaults for jq argjson
   CLEAR_CUT="${CLEAR_CUT:-false}"
   KNOWN_MISS="${KNOWN_MISS:-false}"
+  GOLDENABLE="${GOLDENABLE:-false}"
   NO_FINDINGS="${NO_FINDINGS:-false}"
   DETECTED="${DETECTED:-false}"
   PRECISE="${PRECISE:-false}"
@@ -449,6 +450,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     --arg kind "$KIND" \
     --argjson clearCut "$CLEAR_CUT" \
     --argjson knownMiss "$KNOWN_MISS" \
+    --argjson goldenable "$GOLDENABLE" \
     --arg adapter "$ADAPTER_NAME" \
     --argjson controlArm "$NO_FINDINGS" \
     --argjson detected "$DETECTED" \
@@ -463,6 +465,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
       kind: $kind,
       clearCut: $clearCut,
       knownMiss: $knownMiss,
+      goldenable: $goldenable,
       adapter: $adapter,
       controlArm: $controlArm,
       detected: $detected,

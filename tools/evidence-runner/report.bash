@@ -50,7 +50,7 @@ fi
 
 CLEAR_CUT_COUNT="$(jq -R -n '
   [inputs | select(length > 0) | try fromjson catch empty] |
-  [ .[] | select(.clearCut == true and .controlArm == false and .knownMiss == false) ] | length
+  [ .[] | select(.clearCut == true and .goldenable == true and .controlArm == false and .knownMiss == false) ] | length
 ' "$IN_FILE")"
 
 if [ "$CLEAR_CUT_COUNT" -lt 5 ]; then
@@ -87,7 +87,7 @@ READOUT="$(jq -r -R -n '
   ($parsed | map(select(.valid == true) | .val)) as $all |
   ($parsed | map(select(.valid == false)) | length) as $skipped_lines |
 
-  def is_clear_cut: .clearCut == true and .controlArm == false and .knownMiss == false;
+  def is_clear_cut: .clearCut == true and .goldenable == true and .controlArm == false and .knownMiss == false;
 
   ($all | map(select(is_clear_cut))) as $cc |
   ($all | map(select(.knownMiss == true and .controlArm == false))) as $km |

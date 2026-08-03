@@ -23,11 +23,11 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 # Test 1: AE5 - One clear-cut row with detected=false -> NO-GO + triage section, exit 0 for render
 TEST1_FILE="${TMP_DIR}/ae5_metrics.jsonl"
 cat << 'EOF' > "${TEST1_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":false,"precise":true,"repaired":true,"verdictReason":"detected_miss","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":false,"precise":true,"repaired":true,"verdictReason":"detected_miss","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT1=""
@@ -46,10 +46,10 @@ fi
 # Test 2: Refusal Gate - 4 clear-cut rows -> nonzero exit + message naming 4 < 5
 TEST2_FILE="${TMP_DIR}/refusal_metrics.jsonl"
 cat << 'EOF' > "${TEST2_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT2=""
@@ -68,16 +68,16 @@ fi
 # Test 3: Clean 8-row file with knownMiss and controlArm -> 100% metrics, field-readiness framing, appendices rendered
 TEST3_FILE="${TMP_DIR}/clean8_metrics.jsonl"
 cat << 'EOF' > "${TEST3_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s6","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s7","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s8","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s6","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s7","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s8","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 {"scenario":"km1","kind":"finding","clearCut":false,"knownMiss":true,"adapter":"stub","controlArm":false,"detected":false,"precise":true,"repaired":false,"verdictReason":"known_miss","wallClockSec":5,"turns":null,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"ca1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":true,"detected":true,"precise":true,"repaired":false,"verdictReason":"golden_mismatch","wallClockSec":15,"turns":2,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"ca1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":true,"detected":true,"precise":true,"repaired":false,"verdictReason":"golden_mismatch","wallClockSec":15,"turns":2,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT3=""
@@ -101,11 +101,11 @@ fi
 # Test 4: Median wall-clock calculation for odd-count fixture (values: 10, 30, 20, 50, 40 -> median 30)
 TEST4_FILE="${TMP_DIR}/median_metrics.jsonl"
 cat << 'EOF' > "${TEST4_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":30,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":20,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":50,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":40,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":30,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":20,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":50,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":40,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT4=""
@@ -124,11 +124,11 @@ fi
 # Test 5: Failure rows (timeout) -> footnote rendered
 TEST5_FILE="${TMP_DIR}/failure_metrics.jsonl"
 cat << 'EOF' > "${TEST5_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":false,"verdictReason":"timeout","wallClockSec":600,"turns":null,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":false,"verdictReason":"timeout","wallClockSec":600,"turns":null,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT5=""
@@ -146,12 +146,12 @@ fi
 # Test 6: Malformed JSONL lines -> tolerated, skipped lines footnote rendered
 TEST6_FILE="${TMP_DIR}/malformed_metrics.jsonl"
 cat << 'EOF' > "${TEST6_FILE}"
-{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 THIS_IS_MALFORMED_JSON
-{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
-{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
 EOF
 
 OUT6=""
