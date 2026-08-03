@@ -65,6 +65,23 @@ let
       granularityIr.emissions
       ++ (map (e: e // { scope = "user=tux,host=igloo,system=x86_64-linux"; }) granularityIr.emissions);
   };
+  # Regression: an aspect emitting multiple distinct 1-leaf emissions in the same scope
+  # (e.g. across two classes or modules) sums to >1 leaves in that scope group, so it
+  # must NOT count toward the single-option advisory.
+  sameScopeMultiEmissionIr = granularityIr // {
+    emissions = granularityIr.emissions ++ [
+      {
+        scope = "host=igloo,system=x86_64-linux";
+        class = "home-manager";
+        identity = "opt1";
+        declared = true;
+        opaque = false;
+        content = {
+          programs.git.enable = true;
+        };
+      }
+    ];
+  };
 
   docMultiScope = engine.analyze {
     ir = multiScopeIr;
@@ -75,6 +92,25 @@ let
     ir = granularityIr;
     inherit rules;
   };
+
+  docSameScopeMultiEmission = engine.analyze {
+    ir = sameScopeMultiEmissionIr;
+    inherit rules;
+  };
+
+  # Regression (field-observed): the capture layer can replicate one logical
+  # emission many times within a scope (identical scope/class/content rows).
+  # Duplicates must collapse before leaf summing, or every real workspace's
+  # single-option aspects would escape the rule.
+  capReplicatedIr = granularityIr // {
+    emissions = granularityIr.emissions ++ granularityIr.emissions ++ granularityIr.emissions;
+  };
+
+  docCapReplicated = engine.analyze {
+    ir = capReplicatedIr;
+    inherit rules;
+  };
+
   granFinding = builtins.head docGranular.findings;
 in
 {
@@ -92,7 +128,15 @@ in
   covers-advisory-severity = granFinding.severity == "advisory";
 
   # Regression: multi-scope single-leaf aspects still fire granularity.
+  capture-replicated-duplicates-collapse =
+    docCapReplicated.summary.advisory == 1
+    || throw "Expected capture-replicated duplicate emissions to collapse and still fire granularity: ${builtins.toJSON docCapReplicated.findings}";
+
   multi-scope-single-leaf-still-fires =
     docMultiScope.summary.advisory == 1
     && (builtins.head docMultiScope.findings).rule == "granularity";
+
+  # Regression: multiple emissions in the same scope sum leaf counts within that scope group.
+  same-scope-multi-emission-leaves-summed =
+    docSameScopeMultiEmission.summary.advisory == 0;
 }

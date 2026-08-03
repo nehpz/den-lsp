@@ -34,7 +34,9 @@
             pkgs.nix
           ];
           text = ''
-            # writeShellApplication resets PATH to runtimeInputs; append host PATH inside the script so host agent CLIs stay reachable
+            # writeShellApplication prepends runtimeInputs to the caller PATH (it does
+            # not replace it); run.bash additionally appends common host bin dirs so
+            # agent CLIs stay reachable under stripped environments.
             exec ${../tools/evidence-runner}/run.bash "$@"
           '';
         }}/bin/evidence-runner";

@@ -35,5 +35,5 @@ Validation rules enforced by `validateScenario` (`fixtures/scenarios/lib.nix`):
 - `goldenable`: Dictates diff comparison against `golden/`. Requires `exclusionReason` when `false`.
 
 ## Consumption Tiers
-- **Hermetic Tier** (`nix flake check "path:fixtures/scenarios"`): Evaluates scenario manifests, verifies workspace evaluation/error status against expected specs, and validates golden structure.
+- **Hermetic Tier** (`nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"`): Evaluates scenario manifests, verifies workspace evaluation/error status against expected specs, and validates golden structure.
 - **Evidence Runner** (`tools/evidence-runner/run.bash`): Materializes `workspace/`, pre-evaluates findings/errors, runs adapter agent, runs diff comparison via `compare.bash` against `golden/`, and emits structured JSON metrics.

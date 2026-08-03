@@ -309,7 +309,7 @@ Phase A: U1 (independent, lands first per KD8). Phase B: U2 → U3, U4, U5 (corp
   - Covers AE4: a rule change introducing a false positive on a clean base turns the tier red in CI without any agent run.
   - A seeded defect whose expected finding stops firing turns the tier red (catch regression).
   - Known-miss scenario passes without weakening either assertion above.
-- **Verification:** `nix flake check path:fixtures/scenarios` green locally and wired into the CI `check` job.
+- **Verification:** `nix flake check path:fixtures/scenarios --override-input den-lsp "$PWD"` (the override keeps the tier on the working tree, not the published pin) green locally and wired into the CI `check` job.
 
 ### U6. Golden comparator
 

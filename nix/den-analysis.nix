@@ -205,7 +205,10 @@ let
     x:
     if builtins.isAttrs x then
       let
-        res = builtins.tryEval x.description;
+        # tryEval catches throwing description *values*; `or null` keeps the
+        # access total when the attribute is absent (missing-attribute errors
+        # are not catchable by tryEval).
+        res = builtins.tryEval (x.description or null);
       in
       if res.success then res.value else null
     else

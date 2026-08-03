@@ -16,7 +16,7 @@ if [ -z "${REPO_DIR:-}" ] || [ ! -f "${REPO_DIR}/fixtures/scenarios/lib.nix" ]; 
 fi
 export REPO_DIR="${REPO_DIR}"
 # Ensure PATH includes host directories for agent CLIs (e.g. claude, omp)
-export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.cargo/bin"
+export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin"
 
 NIX_ERR_FILE=""
 CURRENT_TEMP_PARENT=""
@@ -203,6 +203,10 @@ run_with_timeout() {
     return "$ec"
   fi
 }
+
+# Start each sweep from a clean slate: stale rows from a previous run would
+# double-count scenarios in the readout and can flip its verdict.
+: > "$OUT_FILE"
 
 # Process each scenario sequentially
 SCENARIO_COUNT="$(jq 'length' <<< "$SELECTED_SCENARIOS")"
