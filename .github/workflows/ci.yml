@@ -22,6 +22,11 @@ jobs:
         run: nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"
       - name: Run consumer fixture E2E
         run: fixtures/run-checks.bash
+      - name: Run evidence runner unit tests
+        run: |
+          tools/evidence-runner/test-compare.bash
+          tools/evidence-runner/test-report.bash
+          tools/evidence-runner/test-run.bash
 
   flakehub-publish:
     name: Publish to FlakeHub

@@ -48,14 +48,17 @@ if [ ! -s "$IN_FILE" ]; then
   exit 1
 fi
 
-CLEAR_CUT_COUNT="$(jq -s '[ .[] | select(.clearCut == true and .controlArm == false and .knownMiss == false) ] | length' "$IN_FILE")"
+CLEAR_CUT_COUNT="$(jq -R -n '
+  [inputs | select(length > 0) | try fromjson catch empty] |
+  [ .[] | select(.clearCut == true and .controlArm == false and .knownMiss == false) ] | length
+' "$IN_FILE")"
 
 if [ "$CLEAR_CUT_COUNT" -lt 5 ]; then
   echo "Error: Clear-cut scenario count (${CLEAR_CUT_COUNT}) is below R17 floor of 5. Refusing to render readout." >&2
   exit 1
 fi
 
-READOUT="$(jq -r -s '
+READOUT="$(jq -r -R -n '
   def fmt_num:
     if type == "number" then
       if . == (. | floor) then (. | floor | tostring) else tostring end
@@ -80,7 +83,10 @@ READOUT="$(jq -r -s '
       (((cnt / total) * 10000 | round) / 100 | tostring) + "%"
     end;
 
-  . as $all |
+  [inputs | select(length > 0) | try {valid: true, val: fromjson} catch {valid: false}] as $parsed |
+  ($parsed | map(select(.valid == true) | .val)) as $all |
+  ($parsed | map(select(.valid == false)) | length) as $skipped_lines |
+
   def is_clear_cut: .clearCut == true and .controlArm == false and .knownMiss == false;
 
   ($all | map(select(is_clear_cut))) as $cc |
@@ -127,6 +133,9 @@ READOUT="$(jq -r -s '
     ($cc | map("| \(.scenario) | \(.kind) | \(.detected) | \(.precise) | \(.repaired) | \(.wallClockSec)s | \(.turns // "null") | \(.verdictReason) |") | join("\n")) + "\n",
     (if $has_failures then
       "* Footnote: Adapter failure rows (verdictReason in timeout, garbage_output, adapter_failed) count as repaired=false.\n"
+    else empty end),
+    (if $skipped_lines > 0 then
+      "* Footnote: Skipped \($skipped_lines) malformed JSONL line(s) during input processing.\n"
     else empty end),
     "## Coverage Appendix (Known Misses)\n",
     "Known-miss scenarios document engine limitations outside headline metrics denominators (KTD8).\n",

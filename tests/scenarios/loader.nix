@@ -107,6 +107,72 @@ let
     }
   '';
   incompleteExcluded = (libScenarios.loadScenarioFile incompleteFile) == null;
+  invalidKind = validateScenario {
+    version = 1;
+    name = "test";
+    kind = "invalid-kind";
+    defect = "defect";
+    task = "task";
+    expectedFindings = [ ];
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  invalidKindRejected = !(builtins.tryEval invalidKind).success;
+
+  missingExpectedError = validateScenario {
+    version = 1;
+    name = "test";
+    kind = "eval-error";
+    defect = "defect";
+    task = "task";
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  missingExpectedErrorRejected = !(builtins.tryEval missingExpectedError).success;
+
+  nonListExpectedFindings = validateScenario {
+    version = 1;
+    name = "test";
+    kind = "finding";
+    defect = "defect";
+    task = "task";
+    expectedFindings = "not-a-list";
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  nonListExpectedFindingsRejected = !(builtins.tryEval nonListExpectedFindings).success;
+
+  missingName = validateScenario {
+    version = 1;
+    kind = "finding";
+    defect = "defect";
+    task = "task";
+    expectedFindings = [ ];
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  missingNameRejected = !(builtins.tryEval missingName).success;
+
+  missingTask = validateScenario {
+    version = 1;
+    name = "test";
+    kind = "finding";
+    defect = "defect";
+    expectedFindings = [ ];
+    goldenable = true;
+    clearCut = true;
+    knownMiss = false;
+    complete = true;
+  };
+  missingTaskRejected = !(builtins.tryEval missingTask).success;
 in
 {
   scenario-loader-valid-manifests-load = validManifestsLoad;
@@ -116,4 +182,9 @@ in
   scenario-loader-heavy-flagged = heavyFlagged;
   scenario-loader-known-miss-allowed = knownMissAllowed;
   scenario-loader-incomplete-excluded = incompleteExcluded;
+  scenario-loader-invalid-kind-rejected = invalidKindRejected;
+  scenario-loader-missing-expected-error-rejected = missingExpectedErrorRejected;
+  scenario-loader-non-list-expected-findings-rejected = nonListExpectedFindingsRejected;
+  scenario-loader-missing-name-rejected = missingNameRejected;
+  scenario-loader-missing-task-rejected = missingTaskRejected;
 }

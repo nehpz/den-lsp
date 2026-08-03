@@ -44,7 +44,7 @@ if [[ "$HELP_TEXT" == *"--prompt-file"* ]]; then
   INVOCATION=("$CLI_BIN" --prompt-file "$PROMPT_FILE" --max-turns "$MAX_TURNS")
 elif [[ "$HELP_TEXT" == *"-p "* ]] || [[ "$HELP_TEXT" == *"--prompt "* ]]; then
   PROMPT_TEXT="$(cat "$PROMPT_FILE")"
-  INVOCATION=("$CLI_BIN" -p "$PROMPT_TEXT")
+  INVOCATION=("$CLI_BIN" -p "$PROMPT_TEXT" --max-turns "$MAX_TURNS")
 else
   # Fallback: flag discovery did not match known shapes
   echo "claude.bash: no known CLI prompt flag pattern found in '$CLI_BIN --help'" >&2

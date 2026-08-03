@@ -103,7 +103,11 @@
               severity = f.severity;
             }) doc.findings;
 
-            matchWorkspace = (actualFindings == s.expectedFindings) || s.knownMiss;
+            # Known-miss scenarios assert the miss exactly: zero findings today.
+            # If the engine later detects the defect, this check goes red and the
+            # stale known-miss must be promoted, never silently absorbed.
+            matchWorkspace =
+              if s.knownMiss then actualFindings == [ ] else actualFindings == s.expectedFindings;
 
             goldenPass =
               if s.goldenable then

@@ -18,6 +18,19 @@ export REPO_DIR="${REPO_DIR}"
 # Ensure PATH includes host directories for agent CLIs (e.g. claude, omp)
 export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.cargo/bin"
 
+NIX_ERR_FILE=""
+CURRENT_TEMP_PARENT=""
+
+cleanup() {
+  if [ -n "${NIX_ERR_FILE:-}" ] && [ -f "${NIX_ERR_FILE}" ]; then
+    rm -f "${NIX_ERR_FILE}"
+  fi
+  if [ -n "${CURRENT_TEMP_PARENT:-}" ] && [ -d "${CURRENT_TEMP_PARENT}" ]; then
+    rm -rf "${CURRENT_TEMP_PARENT}"
+  fi
+}
+trap cleanup EXIT INT TERM
+
 TARGET_SCENARIO=""
 SET_NAME="clear-cut"
 ADAPTER_NAME=""
@@ -168,16 +181,23 @@ run_with_timeout() {
   if command -v timeout >/dev/null 2>&1; then
     timeout "$timeout_sec" "$@"
   else
+    local watcher_pid
+    set -m
     "$@" &
     local pid=$!
+    set +m
     (
-      sleep "$timeout_sec"
-      kill -9 "$pid" 2>/dev/null || true
-    ) &
-    local watcher_pid=$!
+      sleep "$timeout_sec" &
+      local sleep_pid=$!
+      trap 'kill -9 "$sleep_pid" 2>/dev/null || true' EXIT
+      wait "$sleep_pid" 2>/dev/null || true
+      kill -9 -"$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+    ) 2>/dev/null &
+    watcher_pid=$!
     set +e
     wait "$pid" 2>/dev/null
     local ec=$?
+    pkill -P "$watcher_pid" 2>/dev/null || true
     kill -9 "$watcher_pid" 2>/dev/null || true
     set -e
     return "$ec"
@@ -192,20 +212,12 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
 
   # Step 1: Materialize workspace
   TEMP_PARENT="$(cd "$(mktemp -d)" && pwd -P)"
+  CURRENT_TEMP_PARENT="${TEMP_PARENT}"
   TEMP_WORKSPACE="${TEMP_PARENT}/workspace"
   mkdir -p "${TEMP_WORKSPACE}"
 
   SCENARIO_SRC_DIR="${REPO_DIR}/fixtures/scenarios/${NAME}"
   cp -Rf "${SCENARIO_SRC_DIR}/workspace/." "${TEMP_WORKSPACE}/"
-
-  (
-    cd "${TEMP_WORKSPACE}"
-    git init -q
-    git config user.name "Evidence Runner"
-    git config user.email "runner@example.com"
-    git add -A
-    git commit -qm baseline
-  )
 
   # Step 2: Pre-repair findings / eval payload (KTD5, KTD10)
   DETECTED=false
@@ -223,22 +235,31 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     ACTUAL_FINDINGS_JSON="$(jq -c '.findings // []' <<< "$PRE_EVAL_JSON" 2>/dev/null || echo "[]")"
     [ -z "$ACTUAL_FINDINGS_JSON" ] && ACTUAL_FINDINGS_JSON="[]"
 
-    DETECTED_PRECISE_JSON="$(jq -n \
-      --argjson expected "${EXPECTED_FINDINGS_JSON}" \
-      --argjson actual "${ACTUAL_FINDINGS_JSON}" \
-      '{
-        detected: ($expected | all(.[]; . as $e | $actual | any(.[]; .rule == $e.rule and .severity == $e.severity))),
-        precise: ($actual | all(.[]; . as $a | $expected | any(.[]; .rule == $a.rule and .severity == $a.severity)))
-      }')"
+    EMPTY_EXPECTED_GUARD=false
+    if [ "$EXPECTED_FINDINGS_JSON" = "[]" ] && [ "$KNOWN_MISS" = "false" ]; then
+      DETECTED=false
+      PRECISE=false
+      EMPTY_EXPECTED_GUARD=true
+    else
+      DETECTED_PRECISE_JSON="$(jq -n \
+        --argjson expected "${EXPECTED_FINDINGS_JSON}" \
+        --argjson actual "${ACTUAL_FINDINGS_JSON}" \
+        '{
+          detected: ($expected | all(.[]; . as $e | $actual | any(.[]; .rule == $e.rule and .severity == $e.severity))),
+          precise: ($actual | all(.[]; . as $a | $expected | any(.[]; .rule == $a.rule and .severity == $a.severity)))
+        }')"
 
-    DETECTED="$(jq -r '.detected // "false"' <<< "$DETECTED_PRECISE_JSON")"
-    PRECISE="$(jq -r '.precise // "false"' <<< "$DETECTED_PRECISE_JSON")"
+      DETECTED="$(jq -r '.detected // "false"' <<< "$DETECTED_PRECISE_JSON")"
+      PRECISE="$(jq -r '.precise // "false"' <<< "$DETECTED_PRECISE_JSON")"
+    fi
 
     if [ "$NO_FINDINGS" = "false" ] && [ -n "$PRE_EVAL_JSON" ]; then
       FINDINGS_TEXT="$(jq -r '
         .findings // [] | map(
           "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
           (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
+          (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
+          (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
           (if .message then "\n  Message: \(.message)" else "" end)
         ) | join("\n\n")
       ' <<< "$PRE_EVAL_JSON")"
@@ -258,7 +279,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     fi
 
     if [ "$NO_FINDINGS" = "false" ]; then
-      FINDINGS_TEXT="$(grep -E "^error:" <<< "$PRE_EVAL_ERR" || echo "$PRE_EVAL_ERR")"
+      FINDINGS_TEXT="$PRE_EVAL_ERR"
     fi
   fi
 
@@ -274,6 +295,17 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     echo ""
     echo "Please repair the defect in place within the workspace."
   } > "${PROMPT_FILE}"
+  cp "${PROMPT_FILE}" "${TEMP_WORKSPACE}/TASK.md"
+
+  (
+    cd "${TEMP_WORKSPACE}"
+    git init -q
+    git config user.name "Evidence Runner"
+    git config user.email "runner@example.com"
+    git add -A
+    git commit -qm baseline
+  )
+
 
   # Step 4: Invoke Adapter (KTD4, KTD9)
   START_TIME="$(date +%s)"
@@ -292,7 +324,11 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
 
   ADAPTER_OUT=""
   set +e
-  ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+  if [ "$ADAPTER_NAME" = "stub" ]; then
+    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+  else
+    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env -u REPO_DIR -u GOLDEN_DIR "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+  fi
   ADAPTER_EC=$?
   set -e
   END_TIME="$(date +%s)"
@@ -322,29 +358,45 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   VERDICT_REASON=""
 
   if [ "$ADAPTER_STATUS" = "completed" ]; then
-    if [ "$GOLDENABLE" = "true" ]; then
+    if [ "${EMPTY_EXPECTED_GUARD:-false}" = "true" ]; then
+      REPAIRED=false
+      VERDICT_REASON="empty_expected"
+    elif [ "$GOLDENABLE" = "true" ]; then
+      EXPECTED_RULES=()
+      if [ "$KIND" = "finding" ]; then
+        mapfile -t EXPECTED_RULES < <(jq -r '.expectedFindings[]?.rule // empty' <<< "$SCENARIO_OBJ")
+      fi
+
       COMPARE_OUT=""
       set +e
-      COMPARE_OUT="$("${SCRIPT_DIR}/compare.bash" --repaired "${TEMP_WORKSPACE}" --golden "${GOLDEN_DIR_PATH}" --kind "${KIND}")"
+      COMPARE_OUT="$("${SCRIPT_DIR}/compare.bash" --repaired "${TEMP_WORKSPACE}" --golden "${GOLDEN_DIR_PATH}" --kind "${KIND}" ${EXPECTED_RULES[@]+--expected-rules "${EXPECTED_RULES[@]}"})"
       COMPARE_EC=$?
       set -e
 
-      VERDICT="$(jq -r '.verdict // "FAIL"' <<< "$COMPARE_OUT")"
-      MATCH="$(jq -r '.match // false' <<< "$COMPARE_OUT")"
-      CLEAN="$(jq -r '.cleanReanalysis // false' <<< "$COMPARE_OUT")"
+      if jq -e . >/dev/null 2>&1 <<< "$COMPARE_OUT"; then
+        VERDICT="$(jq -r '.verdict // "FAIL"' <<< "$COMPARE_OUT")"
+        MATCH="$(jq -r '.match // false' <<< "$COMPARE_OUT")"
+        CLEAN="$(jq -r '.cleanReanalysis // false' <<< "$COMPARE_OUT")"
 
-      if [ "$VERDICT" = "PASS" ]; then
-        REPAIRED=true
-        VERDICT_REASON="match_and_clean"
-      else
-        REPAIRED=false
-        if [ "$MATCH" = "false" ] && [ "$CLEAN" = "true" ]; then
-          VERDICT_REASON="golden_mismatch"
-        elif [ "$MATCH" = "true" ] && [ "$CLEAN" = "false" ]; then
-          VERDICT_REASON="unclean_reanalysis"
+        if [ "$VERDICT" = "PASS" ]; then
+          REPAIRED=true
+          VERDICT_REASON="match_and_clean"
         else
-          VERDICT_REASON="mismatch_and_unclean"
+          REPAIRED=false
+          if [ "$MATCH" = "false" ] && [ "$CLEAN" = "true" ]; then
+            VERDICT_REASON="golden_mismatch"
+          elif [ "$MATCH" = "true" ] && [ "$CLEAN" = "false" ]; then
+            VERDICT_REASON="unclean_reanalysis"
+          else
+            VERDICT_REASON="mismatch_and_unclean"
+          fi
         fi
+      else
+        VERDICT="FAIL"
+        MATCH=false
+        CLEAN=false
+        VERDICT_REASON="compare_failed"
+        REPAIRED=false
       fi
     else
       REPAIRED=false
@@ -405,4 +457,5 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     }' >> "$OUT_FILE"
 
   rm -rf "${TEMP_PARENT}"
+  CURRENT_TEMP_PARENT=""
 done

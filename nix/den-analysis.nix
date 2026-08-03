@@ -211,14 +211,9 @@ let
     else
       null;
 
-  tryQuirks = builtins.tryEval den.quirks;
-  rawQuirks =
-    if tryQuirks.success then
-      tryQuirks.value
-    else
-      lib.genAttrs (builtins.attrNames (den.classes or { })) (_: {
-        description = null;
-      });
+  # NOTE: den.quirks and captureFleet failures MUST propagate (R13): a broken
+  # consumer config is an eval failure, never a clean/empty analysis document.
+  # Only per-attribute description forcing is guarded (safeDescription above).
 
   registriesSnapshot = {
     structuralKeys = builtins.attrNames fxLib.keyClassification.structuralKeysSet;
@@ -227,7 +222,7 @@ let
     }) (den.classes or { });
     quirks = builtins.mapAttrs (_: q: {
       description = safeDescription q;
-    }) rawQuirks;
+    }) (den.quirks or { });
     batteries = builtins.mapAttrs (_: aspectInfo) (den.batteries or { });
     aspects = builtins.mapAttrs (_: aspectInfo) (den.aspects or { });
   };
@@ -249,36 +244,22 @@ let
   captureFleetMode =
     classes:
     let
-      tryFleet = builtins.tryEval (lib.genAttrs classes (class: den.lib.capture.captureFleet { inherit class; }));
+      perClass = lib.genAttrs classes (class: den.lib.capture.captureFleet { inherit class; });
+      first = perClass.${lib.head classes};
     in
-    if tryFleet.success then
-      let
-        perClass = tryFleet.value;
-        first = perClass.${lib.head classes};
-      in
-      {
-        version = 1;
-        entries = lib.concatMap (c: perClass.${c}.entries) classes;
-        inherit (first) ctxTrace;
-        emissions = lib.concatMap (c: emissionsFrom perClass.${c}.scopedClassImports) classes;
-        scopes = {
-          parent = first.scopeParent;
-          entityKind = first.scopeEntityKind;
-          contextKeys = builtins.mapAttrs (_: ctx: builtins.attrNames ctx) first.scopeContexts;
-        };
-        registries = registriesSnapshot;
-        entities = entitiesSnapshot;
-      }
-    else
-      {
-        version = 1;
-        entries = [ ];
-        ctxTrace = [ ];
-        emissions = [ ];
-        scopes = { };
-        registries = registriesSnapshot;
-        entities = entitiesSnapshot;
+    {
+      version = 1;
+      entries = lib.concatMap (c: perClass.${c}.entries) classes;
+      inherit (first) ctxTrace;
+      emissions = lib.concatMap (c: emissionsFrom perClass.${c}.scopedClassImports) classes;
+      scopes = {
+        parent = first.scopeParent;
+        entityKind = first.scopeEntityKind;
+        contextKeys = builtins.mapAttrs (_: ctx: builtins.attrNames ctx) first.scopeContexts;
       };
+      registries = registriesSnapshot;
+      entities = entitiesSnapshot;
+    };
 
   captureEntityMode =
     {

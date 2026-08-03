@@ -143,6 +143,29 @@ if [ $EC5 -eq 0 ] && grep -q "Footnote: Adapter failure rows" <<< "$OUT5" && gre
 else
   log_fail "Failure rows footnote" "exit code $EC5, output: $OUT5"
 fi
+# Test 6: Malformed JSONL lines -> tolerated, skipped lines footnote rendered
+TEST6_FILE="${TMP_DIR}/malformed_metrics.jsonl"
+cat << 'EOF' > "${TEST6_FILE}"
+{"scenario":"s1","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+THIS_IS_MALFORMED_JSON
+{"scenario":"s2","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s3","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s4","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"s5","kind":"finding","clearCut":true,"knownMiss":false,"adapter":"stub","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"timestamp":"2026-08-03T00:00:00Z"}
+EOF
+
+OUT6=""
+EC6=0
+set +e
+OUT6="$("${REPORT_BASH}" --in "${TEST6_FILE}" 2>&1)"
+EC6=$?
+set -e
+
+if [ $EC6 -eq 0 ] && grep -q "Skipped 1 malformed JSONL line" <<< "$OUT6" && grep -q "Scenarios Evaluated (Clear-Cut): 5" <<< "$OUT6"; then
+  log_pass "Malformed JSONL lines tolerated with footnote rendered"
+else
+  log_fail "Malformed JSONL lines test failed" "Output:\n${OUT6}"
+fi
 
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 
