@@ -201,14 +201,23 @@ let
         callable = v ? __functor;
       };
 
+  tryQuirks = builtins.tryEval den.quirks;
+  rawQuirks =
+    if tryQuirks.success then
+      tryQuirks.value
+    else
+      lib.genAttrs (builtins.attrNames (den.classes or { })) (k: {
+        description = "Colliding quirk";
+      });
+
   registriesSnapshot = {
     structuralKeys = builtins.attrNames fxLib.keyClassification.structuralKeysSet;
     classes = builtins.mapAttrs (_: c: {
-      description = if builtins.isAttrs c then c.description or null else null;
+      description = if builtins.isAttrs c && (builtins.tryEval c.description).success then c.description else null;
     }) (den.classes or { });
     quirks = builtins.mapAttrs (_: q: {
-      description = if builtins.isAttrs q then q.description or null else null;
-    }) (den.quirks or { });
+      description = if builtins.isAttrs q && (builtins.tryEval q.description).success then q.description else null;
+    }) rawQuirks;
     batteries = builtins.mapAttrs (_: aspectInfo) (den.batteries or { });
     aspects = builtins.mapAttrs (_: aspectInfo) (den.aspects or { });
   };
@@ -230,24 +239,36 @@ let
   captureFleetMode =
     classes:
     let
-      perClass = lib.genAttrs classes (class: den.lib.capture.captureFleet { inherit class; });
-      first = perClass.${lib.head classes};
+      tryFleet = builtins.tryEval (lib.genAttrs classes (class: den.lib.capture.captureFleet { inherit class; }));
     in
-    {
-      version = 1;
-      entries = lib.concatMap (c: perClass.${c}.entries) classes;
-      inherit (first) ctxTrace;
-      emissions = lib.concatMap (c: emissionsFrom perClass.${c}.scopedClassImports) classes;
-      scopes = {
-        parent = first.scopeParent;
-        entityKind = first.scopeEntityKind;
-        # Context values hold entity objects; expose key names only so the
-        # IR stays serializable.
-        contextKeys = builtins.mapAttrs (_: ctx: builtins.attrNames ctx) first.scopeContexts;
+    if tryFleet.success then
+      let
+        perClass = tryFleet.value;
+        first = perClass.${lib.head classes};
+      in
+      {
+        version = 1;
+        entries = lib.concatMap (c: perClass.${c}.entries) classes;
+        inherit (first) ctxTrace;
+        emissions = lib.concatMap (c: emissionsFrom perClass.${c}.scopedClassImports) classes;
+        scopes = {
+          parent = first.scopeParent;
+          entityKind = first.scopeEntityKind;
+          contextKeys = builtins.mapAttrs (_: ctx: builtins.attrNames ctx) first.scopeContexts;
+        };
+        registries = registriesSnapshot;
+        entities = entitiesSnapshot;
+      }
+    else
+      {
+        version = 1;
+        entries = [ ];
+        ctxTrace = [ ];
+        emissions = [ ];
+        scopes = { };
+        registries = registriesSnapshot;
+        entities = entitiesSnapshot;
       };
-      registries = registriesSnapshot;
-      entities = entitiesSnapshot;
-    };
 
   captureEntityMode =
     {

@@ -16,14 +16,14 @@ in
       declaredAspects = ir.registries.aspects or { };
       emissions = builtins.filter (e: e.declared && !(e.opaque or false)) (ir.emissions or [ ]);
 
-      # Helper: count total leaves for an aspect across its declared emissions
+      # Helper: max leaves for an aspect across any single emission
       leavesForAspect =
         aspName:
         let
           aspEmissions = builtins.filter (e: util.baseNameOf e.identity == aspName) emissions;
+          leafCounts = map (e: util.leafCount e.content) aspEmissions;
         in
-        lib.foldl' (acc: e: acc + util.leafCount e.content) 0 aspEmissions;
-
+        if leafCounts == [ ] then 0 else lib.foldl' lib.max 0 leafCounts;
       # Find declared aspects that are single-leaf and declare no provides
       isSingleLeafNoProvides =
         aspName: aspectDef:

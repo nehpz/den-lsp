@@ -56,6 +56,21 @@ let
     };
   };
 
+  # Regression (field-observed): a single-option aspect included in several
+  # scopes emits its one-leaf content once per scope. Leaf counting is
+  # max-per-emission, not sum-across-emissions, so multi-scope inclusion
+  # must not let a single-option aspect escape the rule.
+  multiScopeIr = granularityIr // {
+    emissions =
+      granularityIr.emissions
+      ++ (map (e: e // { scope = "user=tux,host=igloo,system=x86_64-linux"; }) granularityIr.emissions);
+  };
+
+  docMultiScope = engine.analyze {
+    ir = multiScopeIr;
+    inherit rules;
+  };
+
   docGranular = engine.analyze {
     ir = granularityIr;
     inherit rules;
@@ -75,4 +90,9 @@ in
 
   # Covers AE6.
   covers-advisory-severity = granFinding.severity == "advisory";
+
+  # Regression: multi-scope single-leaf aspects still fire granularity.
+  multi-scope-single-leaf-still-fires =
+    docMultiScope.summary.advisory == 1
+    && (builtins.head docMultiScope.findings).rule == "granularity";
 }
