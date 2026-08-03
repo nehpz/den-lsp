@@ -69,5 +69,6 @@ let
 
   structural = if builtins.pathExists ./structural then suiteDir ./structural else { };
   idiom = if builtins.pathExists ./idiom then suiteDir ./idiom else { };
+  scenarios = if builtins.pathExists ./scenarios then suiteDir ./scenarios else { };
 in
-core // structural // idiom
+core // structural // idiom // scenarios

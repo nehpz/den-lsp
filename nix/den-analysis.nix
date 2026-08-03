@@ -201,13 +201,30 @@ let
         callable = v ? __functor;
       };
 
+  safeDescription =
+    x:
+    if builtins.isAttrs x then
+      let
+        # tryEval catches throwing description *values*; `or null` keeps the
+        # access total when the attribute is absent (missing-attribute errors
+        # are not catchable by tryEval).
+        res = builtins.tryEval (x.description or null);
+      in
+      if res.success then res.value else null
+    else
+      null;
+
+  # NOTE: den.quirks and captureFleet failures MUST propagate (R13): a broken
+  # consumer config is an eval failure, never a clean/empty analysis document.
+  # Only per-attribute description forcing is guarded (safeDescription above).
+
   registriesSnapshot = {
     structuralKeys = builtins.attrNames fxLib.keyClassification.structuralKeysSet;
     classes = builtins.mapAttrs (_: c: {
-      description = if builtins.isAttrs c then c.description or null else null;
+      description = safeDescription c;
     }) (den.classes or { });
     quirks = builtins.mapAttrs (_: q: {
-      description = if builtins.isAttrs q then q.description or null else null;
+      description = safeDescription q;
     }) (den.quirks or { });
     batteries = builtins.mapAttrs (_: aspectInfo) (den.batteries or { });
     aspects = builtins.mapAttrs (_: aspectInfo) (den.aspects or { });
@@ -241,8 +258,6 @@ let
       scopes = {
         parent = first.scopeParent;
         entityKind = first.scopeEntityKind;
-        # Context values hold entity objects; expose key names only so the
-        # IR stays serializable.
         contextKeys = builtins.mapAttrs (_: ctx: builtins.attrNames ctx) first.scopeContexts;
       };
       registries = registriesSnapshot;
