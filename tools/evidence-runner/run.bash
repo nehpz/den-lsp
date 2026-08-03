@@ -28,9 +28,13 @@ MAX_TURNS=25
 
 usage() {
   cat <<EOF
-Usage: run.bash --adapter <name> [options]
+Usage: run.bash [command] [options]
 
-Options:
+Commands:
+  run                Run metrics sweep (default command)
+  report             Render go/no-go readout report
+
+Options for run:
   --adapter <name>   Required. Adapter script name (e.g. stub, claude)
   --scenario <name>  Run a single scenario by name
   --set <name>       Target scenario set: clear-cut (default)
@@ -39,8 +43,27 @@ Options:
   --timeout <sec>    Wall-clock timeout per scenario in seconds (default: 600)
   --max-turns <n>    Maximum turns per scenario (default: 25)
   --help, -h         Show this help message
+
+Options for report:
+  --in <file>        Metrics JSON-lines input file (default: ./evidence-metrics.jsonl)
+  --out <file>       Optional output markdown file
+  --help, -h         Show this help message
 EOF
 }
+
+if [ "${1:-}" = "report" ]; then
+  shift
+  if [ -f "${SCRIPT_DIR}/report.bash" ]; then
+    exec "${SCRIPT_DIR}/report.bash" "$@"
+  elif [ -f "${REPO_DIR}/tools/evidence-runner/report.bash" ]; then
+    exec "${REPO_DIR}/tools/evidence-runner/report.bash" "$@"
+  else
+    exec "${SCRIPT_DIR}/report.bash" "$@"
+  fi
+elif [ "${1:-}" = "run" ]; then
+  shift
+fi
+
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
