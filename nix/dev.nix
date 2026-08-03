@@ -28,6 +28,7 @@
         program = "${pkgs.writeShellApplication {
           name = "evidence-runner";
           runtimeInputs = [
+            pkgs.bash
             pkgs.jq
             pkgs.git
             pkgs.coreutils

@@ -179,7 +179,7 @@ run_with_timeout() {
   local timeout_sec="$1"
   shift
   if command -v timeout >/dev/null 2>&1; then
-    timeout "$timeout_sec" "$@"
+    timeout --kill-after=10 "$timeout_sec" "$@"
   else
     local watcher_pid
     set -m
@@ -353,12 +353,16 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   ADAPTER_OUT=""
   set +e
   if [ "$ADAPTER_NAME" = "stub" ]; then
-    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+    run_with_timeout "$TIMEOUT_SEC" env PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" >"${TEMP_PARENT}/adapter_out.json" 2>"${TEMP_PARENT}/adapter_stderr.log"
   else
-    ADAPTER_OUT=$(run_with_timeout "$TIMEOUT_SEC" env -u REPO_DIR -u GOLDEN_DIR PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" 2>"${TEMP_PARENT}/adapter_stderr.log")
+    run_with_timeout "$TIMEOUT_SEC" env -u REPO_DIR -u GOLDEN_DIR PATH="$ADAPTER_PATH" "$ADAPTER_SCRIPT" >"${TEMP_PARENT}/adapter_out.json" 2>"${TEMP_PARENT}/adapter_stderr.log"
   fi
   ADAPTER_EC=$?
   set -e
+  # Read output from the file after the wait: stdout goes to a file (not a
+  # pipe), so a killed adapter's lingering grandchildren cannot hold the
+  # capture open past the timeout.
+  ADAPTER_OUT="$(cat "${TEMP_PARENT}/adapter_out.json" 2>/dev/null || true)"
   END_TIME="$(date +%s)"
   WALL_CLOCK_SEC=$((END_TIME - START_TIME))
 
@@ -395,7 +399,10 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     elif [ "$GOLDENABLE" = "true" ]; then
       EXPECTED_RULES=()
       if [ "$KIND" = "finding" ]; then
-        mapfile -t EXPECTED_RULES < <(jq -r '.expectedFindings[]?.rule // empty' <<< "$SCENARIO_OBJ")
+        # while-read instead of mapfile: stock macOS ships Bash 3.2.
+        while IFS= read -r _rule; do
+          [ -n "$_rule" ] && EXPECTED_RULES+=("$_rule")
+        done < <(jq -r '.expectedFindings[]?.rule // empty' <<< "$SCENARIO_OBJ")
       fi
 
       COMPARE_OUT=""

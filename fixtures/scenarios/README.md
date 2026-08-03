@@ -36,4 +36,5 @@ Validation rules enforced by `validateScenario` (`fixtures/scenarios/lib.nix`):
 
 ## Consumption Tiers
 - **Hermetic Tier** (`nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"`): Evaluates scenario manifests, verifies workspace evaluation/error status against expected specs, and validates golden structure.
+- **Heavy Tier** (manual; excluded from the default gate for cost): `nix build "path:fixtures/scenarios#heavyChecks.<system>.scenario-field-fleet-scale" --override-input den-lsp "$PWD"`. Run before releases or when touching capture/normalization paths - `nix flake check` only warns about the non-standard `heavyChecks` output and never builds it.
 - **Evidence Runner** (`tools/evidence-runner/run.bash`): Materializes `workspace/`, pre-evaluates findings/errors, runs adapter agent, runs diff comparison via `compare.bash` against `golden/`, and emits structured JSON metrics.
