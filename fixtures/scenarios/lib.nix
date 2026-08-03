@@ -25,9 +25,12 @@ let
       throw "Scenario manifest with goldenable=false requires a non-empty exclusionReason string"
     else if !(manifest ? clearCut) || !(builtins.isBool manifest.clearCut) then
       throw "Scenario manifest clearCut must be a boolean"
+    else if manifest ? heavy && !(builtins.isBool manifest.heavy) then
+      throw "Scenario manifest heavy must be a boolean"
     else
       manifest // {
         knownMiss = manifest.knownMiss or false;
+        heavy = manifest.heavy or false;
         complete = manifest.complete or false;
         exclusionReason = manifest.exclusionReason or null;
       };
