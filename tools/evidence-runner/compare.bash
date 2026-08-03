@@ -7,6 +7,7 @@ REPAIRED_DIR=""
 GOLDEN_DIR=""
 SCENARIO_KIND="finding"
 EXPECTED_RULES=()
+POSITIONAL_COUNT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -30,15 +31,21 @@ while [[ $# -gt 0 ]]; do
       done
       ;;
     *)
-      if [ -z "$REPAIRED_DIR" ]; then
-        REPAIRED_DIR="$1"
-      elif [ -z "$GOLDEN_DIR" ]; then
-        GOLDEN_DIR="$1"
-      elif [ -z "$SCENARIO_KIND" ]; then
-        SCENARIO_KIND="$1"
-      else
-        EXPECTED_RULES+=("$1")
-      fi
+      case "$POSITIONAL_COUNT" in
+        0)
+          REPAIRED_DIR="$1"
+          ;;
+        1)
+          GOLDEN_DIR="$1"
+          ;;
+        2)
+          SCENARIO_KIND="$1"
+          ;;
+        *)
+          EXPECTED_RULES+=("$1")
+          ;;
+      esac
+      POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
       shift
       ;;
   esac

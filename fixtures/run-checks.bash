@@ -8,7 +8,12 @@ DEN_DIR="${DEN_DIR:-}"
 SYSTEM="$(nix eval --impure --raw --expr builtins.currentSystem)"
 echo "Detected system: ${SYSTEM}"
 
+# Pin parity: reference scenarios lockfile so unlocked consumer flakes use identical pinned dependencies (den, nixpkgs, flake-parts) as hermetic tests.
 OVERRIDE_ARGS=()
+if [ -f "${REPO_DIR}/fixtures/scenarios/flake.lock" ]; then
+  echo "Using reference lock file: ${REPO_DIR}/fixtures/scenarios/flake.lock"
+  OVERRIDE_ARGS+=(--reference-lock-file "${REPO_DIR}/fixtures/scenarios/flake.lock")
+fi
 if [ -n "${DEN_DIR:-}" ]; then
   echo "Using den repo override: ${DEN_DIR}"
   OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")

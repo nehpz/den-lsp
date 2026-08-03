@@ -112,11 +112,24 @@
           }
         else
           let
-            doc = evalWorkspace workspaceDir;
-            actualFindings = map (f: {
-              rule = f.rule;
-              severity = f.severity;
-            }) doc.findings;
+            # Contain throws to this scenario's check instead of aborting the
+            # whole flake eval. tryEval catches throw/assert only; other eval
+            # errors (e.g. missing attributes) still abort - that is a Nix
+            # limitation, not a policy choice.
+            docRes = builtins.tryEval (
+              let
+                doc = evalWorkspace workspaceDir;
+              in
+              builtins.deepSeq doc doc
+            );
+            actualFindings =
+              if docRes.success then
+                map (f: {
+                  rule = f.rule;
+                  severity = f.severity;
+                }) docRes.value.findings
+              else
+                [ ];
 
             sortFindings = builtins.sort (a: b: (builtins.toJSON a) < (builtins.toJSON b));
 
@@ -124,10 +137,13 @@
             # If the engine later detects the defect, this check goes red and the
             # stale known-miss must be promoted, never silently absorbed.
             matchWorkspace =
-              if s.knownMiss then
-                actualFindings == [ ]
-              else
-                sortFindings actualFindings == sortFindings s.expectedFindings;
+              docRes.success
+              && (
+                if s.knownMiss then
+                  actualFindings == [ ]
+                else
+                  sortFindings actualFindings == sortFindings s.expectedFindings
+              );
 
             # The golden is the known-correct repair: it must re-analyze with zero
             # findings of any severity (advisory included), or advisory false
@@ -135,14 +151,23 @@
             goldenPass =
               if s.goldenable then
                 let
-                  goldenDoc = evalWorkspace goldenDir;
+                  goldenRes = builtins.tryEval (
+                    let
+                      fs = (evalWorkspace goldenDir).findings;
+                    in
+                    builtins.deepSeq fs fs
+                  );
                 in
-                goldenDoc.findings == [ ]
+                goldenRes.success && goldenRes.value == [ ]
               else
                 true;
 
             cond = matchWorkspace && goldenPass;
-            msg = "Finding mismatch or golden finding failure for scenario '${s.name}'. Expected: ${builtins.toJSON s.expectedFindings}, Actual: ${builtins.toJSON actualFindings}";
+            msg =
+              if !docRes.success then
+                "Workspace evaluation for scenario '${s.name}' threw instead of producing an analysis document."
+              else
+                "Finding mismatch or golden finding failure for scenario '${s.name}'. Expected: ${builtins.toJSON s.expectedFindings}, Actual: ${builtins.toJSON actualFindings}";
           in
           {
             inherit (s) name;

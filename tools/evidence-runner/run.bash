@@ -155,7 +155,7 @@ rm -f "$NIX_ERR_FILE"
 if [ -n "$TARGET_SCENARIO" ]; then
   FILTER_JQ="[ .[\"${TARGET_SCENARIO}\"] | select(. != null) ]"
 elif [ "$SET_NAME" = "clear-cut" ]; then
-  FILTER_JQ="[ .[] | select(.clearCut == true and .goldenable == true) ] | sort_by(.name)"
+  FILTER_JQ="[ .[] | select(.clearCut == true and .goldenable == true and .knownMiss == false) ] | sort_by(.name)"
 else
   echo "Error: Unknown --set '${SET_NAME}'" >&2
   exit 1
