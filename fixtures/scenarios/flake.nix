@@ -53,27 +53,31 @@
       evalWorkspace =
         dir:
         let
-          eval = flake-parts.lib.evalFlakeModule {
-            inputs = {
-              inherit den den-lsp flake-parts;
-              nixpkgs = inputs.nixpkgs;
-            };
-          } {
-            # `systems` has no flake-parts default. Nothing here forces a
-            # perSystem-derived value today (only flake.den-lsp-analysis is
-            # read), but set it explicitly so a future flake-parts or check
-            # change cannot break every scenario at once with a confusing
-            # "option `systems` is used but not defined" error.
-            systems = [
-              "x86_64-linux"
-              "aarch64-linux"
-              "aarch64-darwin"
-            ];
-            imports = [
-              den.flakeModules.default
-              den-lsp.flakeModules.default
-            ] ++ getModules dir;
-          };
+          eval =
+            flake-parts.lib.evalFlakeModule
+              {
+                inputs = {
+                  inherit den den-lsp flake-parts;
+                  nixpkgs = inputs.nixpkgs;
+                };
+              }
+              {
+                # `systems` has no flake-parts default. Nothing here forces a
+                # perSystem-derived value today (only flake.den-lsp-analysis is
+                # read), but set it explicitly so a future flake-parts or check
+                # change cannot break every scenario at once with a confusing
+                # "option `systems` is used but not defined" error.
+                systems = [
+                  "x86_64-linux"
+                  "aarch64-linux"
+                  "aarch64-darwin"
+                ];
+                imports = [
+                  den.flakeModules.default
+                  den-lsp.flakeModules.default
+                ]
+                ++ getModules dir;
+              };
         in
         eval.config.flake.den-lsp-analysis;
 
@@ -191,7 +195,8 @@
             inherit cond msg;
           };
 
-      buildScenarioCheck = pkgs: evalRes: checkCond pkgs "scenario-${evalRes.name}" evalRes.cond evalRes.msg;
+      buildScenarioCheck =
+        pkgs: evalRes: checkCond pkgs "scenario-${evalRes.name}" evalRes.cond evalRes.msg;
 
       nonHeavyScenarios = lib.filterAttrs (_: s: !s.heavy) scenarios;
       heavyScenarios = lib.filterAttrs (_: s: s.heavy) scenarios;

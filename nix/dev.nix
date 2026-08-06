@@ -25,24 +25,25 @@
       ) engineTests;
       apps.evidence-runner = {
         type = "app";
-        program = "${pkgs.writeShellApplication {
-          name = "evidence-runner";
-          runtimeInputs = [
-            pkgs.bash
-            pkgs.jq
-            pkgs.git
-            pkgs.coreutils
-            pkgs.nix
-          ];
-          text = ''
-            # writeShellApplication prepends runtimeInputs to the caller PATH (it does
-            # not replace it); run.bash additionally appends common host bin dirs so
-            # agent CLIs stay reachable under stripped environments.
-            exec ${../tools/evidence-runner}/run.bash "$@"
-          '';
-        }}/bin/evidence-runner";
+        program = "${
+          pkgs.writeShellApplication {
+            name = "evidence-runner";
+            runtimeInputs = [
+              pkgs.bash
+              pkgs.jq
+              pkgs.git
+              pkgs.coreutils
+              pkgs.nix
+            ];
+            text = ''
+              # writeShellApplication prepends runtimeInputs to the caller PATH (it does
+              # not replace it); run.bash additionally appends common host bin dirs so
+              # agent CLIs stay reachable under stripped environments.
+              exec ${../tools/evidence-runner}/run.bash "$@"
+            '';
+          }
+        }/bin/evidence-runner";
       };
-
 
       packages.den-lsp-server = pkgs.rustPlatform.buildRustPackage {
         pname = "den-lsp-server";

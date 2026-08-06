@@ -133,10 +133,8 @@ in
     || throw "Expected capture-replicated duplicate emissions to collapse and still fire granularity: ${builtins.toJSON docCapReplicated.findings}";
 
   multi-scope-single-leaf-still-fires =
-    docMultiScope.summary.advisory == 1
-    && (builtins.head docMultiScope.findings).rule == "granularity";
+    docMultiScope.summary.advisory == 1 && (builtins.head docMultiScope.findings).rule == "granularity";
 
   # Regression: multiple emissions in the same scope sum leaf counts within that scope group.
-  same-scope-multi-emission-leaves-summed =
-    docSameScopeMultiEmission.summary.advisory == 0;
+  same-scope-multi-emission-leaves-summed = docSameScopeMultiEmission.summary.advisory == 0;
 }

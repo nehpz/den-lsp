@@ -36,8 +36,7 @@ in
           );
           groupedByScope = lib.groupBy (e: e.scope) uniqueEmissions;
           scopeLeafCounts = lib.mapAttrsToList (
-            _scope: scopeEmissions:
-            lib.foldl' (acc: e: acc + util.leafCount e.content) 0 scopeEmissions
+            _scope: scopeEmissions: lib.foldl' (acc: e: acc + util.leafCount e.content) 0 scopeEmissions
           ) groupedByScope;
         in
         if scopeLeafCounts == [ ] then 0 else lib.foldl' lib.max 0 scopeLeafCounts;

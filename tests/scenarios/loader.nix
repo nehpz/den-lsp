@@ -95,7 +95,8 @@ let
     knownMiss = true;
     complete = true;
   };
-  knownMissAllowed = knownMissEmptyFindings.knownMiss == true && knownMissEmptyFindings.expectedFindings == [ ];
+  knownMissAllowed =
+    knownMissEmptyFindings.knownMiss == true && knownMissEmptyFindings.expectedFindings == [ ];
 
   incompleteFile = builtins.toFile "scenario.nix" ''
     {

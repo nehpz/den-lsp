@@ -5,9 +5,7 @@ let
 
   scenariosList = builtins.attrValues scenarios;
 
-  validKinds = builtins.all (
-    s: s.kind == "finding" || s.kind == "eval-error"
-  ) scenariosList;
+  validKinds = builtins.all (s: s.kind == "finding" || s.kind == "eval-error") scenariosList;
 
   findingScenariosHaveFindings = builtins.all (
     s: s.kind != "finding" || builtins.isList s.expectedFindings
