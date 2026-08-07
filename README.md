@@ -24,7 +24,23 @@ following the den-diagram companion pattern:
   serves last-known-good completions/hover while buffers are broken, and
   rebases engine paths onto the workspace.
 
-## Consumer wiring
+## Quickstart (Zero-Touch)
+
+Run `den-lsp-check` directly on any Den consumer repository without adding a flake input or importing a module:
+
+```bash
+# Try before adopting (remote):
+nix run github:nehpz/den-lsp#den-lsp-check -- --json /path/to/your/den/repo
+
+# Local checkout form:
+nix run .#den-lsp-check -- --json <workspace>
+```
+
+No `den-lsp` flake input or `flake-parts` module import is required for zero-touch evaluation.
+
+## Consumer Wiring (CI Gate Upgrade)
+
+To integrate `den-lsp` permanently into your flake as an opt-in CI gate (`nix flake check`), add the flake input and import the module:
 
 ```nix
 {
@@ -39,11 +55,49 @@ following the den-diagram companion pattern:
 
 Then:
 
-- `nix flake check` — the gate (fails on gating findings)
-- `nix run .#den-lsp-check` — the same report, fix-shaped text
-- `nix eval --json path:.#checks.<system>.den-lsp.passthru.analysis` — the
-  raw analysis document (stable interface, `version = 1`)
+- `nix flake check` — the CI gate (fails on gating findings)
+- `nix run .#den-lsp-check` — human-readable check report on stdout
+- `nix run .#den-lsp-check -- --json` — JSON report or error envelope
+- `nix eval --json path:.#checks.<system>.den-lsp.passthru.analysis` — the raw analysis document (`version = 1`, schema in `nix/engine/document.nix`)
 
+## Agent Contract
+
+`den-lsp-check` provides a stable CLI interface and exit taxonomy for automated coding agents and tool integrations. JSON output conforms to findings document v1 (`nix/engine/document.nix`).
+
+### CLI Flags
+
+| Flag | Description | Default |
+|---|---|---|
+| `--json` | Emit structured JSON findings document v1 or error envelope verbatim on stdout | disabled (human text) |
+| `--draft` | Non-blocking evaluation mode; gating findings report but exit `0` | disabled |
+| `--gate` | Blocking gate mode; gating findings trigger exit `1` | enabled |
+| `--timeout <seconds>` | Evaluation deadline in seconds | `120` |
+
+### Exit Classes
+
+| Exit Code | Class | Description |
+|---|---|---|
+| `0` | Pass | Clean evaluation, advisory-only findings, or gating findings under `--draft` |
+| `1` | Gating Block | Gating findings detected under `--gate` (default mode) |
+| `2` | Evaluation / Target Failure | Evaluation failure (`kind: eval-error`) or unsupported target (`kind: unsupported`), disambiguated by `error.kind` |
+| `3` | Timeout | Evaluation timed out before completion (`kind: timeout`) |
+| `64` | Usage Error | Invalid CLI flag or options (nothing printed to stdout) |
+
+### Error Envelope
+
+When evaluation fails before a findings document can be produced (exit code 2 or 3 in `--json` mode), `den-lsp-check` outputs a structured error envelope on stdout:
+
+```json
+{
+  "version": 1,
+  "error": {
+    "kind": "unsupported",
+    "message": "workspace is missing flake.nix"
+  }
+}
+```
+
+Valid `kind` values: `"unsupported"` (not a valid Den flake workspace), `"eval-error"` (Nix evaluation error), `"timeout"` (evaluation exceeded timeout). Findings documents (exit 0/1) follow the schema in `nix/engine/document.nix` (`{ version: 1, findings: [...], summary: {...}, inventory: {...} }`).
 ## Rules
 
 | Rule | Severity | Detects |

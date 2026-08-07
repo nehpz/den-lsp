@@ -38,3 +38,6 @@ The rendered report aggregating per-scenario results into the strategy metrics a
 
 ### Adapter
 The declarative interface between the evidence kernel and one coding agent: how the agent is invoked, how findings are presented, and how status and turn counts are read back. Adding an agent means adding an adapter, never changing the runner.
+
+### Field-Failure Intake
+The convention requiring every real-world breakage (engine crash, wrong finding, hang, timeout) to be minimized into a scenario or fixture in the evaluation corpus. Engine crashes and hangs become hermetic fixtures evaluated in the hermetic tier, while repair defects become scenarios following standard goldenability and pinning rules.
