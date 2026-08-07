@@ -9,6 +9,13 @@ use tokio::time::sleep;
 
 pub const EVAL_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Marks a synthetic deadline message produced by this crate, so the
+/// orchestrator can distinguish it structurally from real nix stderr that
+/// merely happens to contain the words "timed out" (e.g. a network
+/// operation timeout inside an evaluation trace, which should still go
+/// through `parse_nix_stderr` for file/line extraction).
+pub const TIMEOUT_SENTINEL: &str = "den-lsp-timeout: ";
+
 use crate::inventory::AnalysisDocument;
 
 #[derive(Debug, Clone)]
@@ -56,7 +63,8 @@ impl NixEvaluator for CommandNixEvaluator {
                 Ok(Err(e)) => return Err(format!("Failed to execute nix eval: {}", e)),
                 Err(_) => {
                     return Err(format!(
-                        "nix eval timed out after {}s",
+                        "{}nix eval timed out after {}s",
+                        TIMEOUT_SENTINEL,
                         EVAL_TIMEOUT.as_secs()
                     ))
                 }
@@ -106,7 +114,8 @@ impl NixEvaluator for CommandNixEvaluator {
                         Ok(Err(e)) => return Err(format!("Failed to run nix eval analysis: {}", e)),
                         Err(_) => {
                             return Err(format!(
-                                "nix eval timed out after {}s",
+                                "{}nix eval timed out after {}s",
+                                TIMEOUT_SENTINEL,
                                 EVAL_TIMEOUT.as_secs()
                             ))
                         }
@@ -227,8 +236,8 @@ impl EvalOrchestrator {
                                     s
                                 }
                                 Ok(Err(e)) => {
-                                    let (error_block, position) = if e.contains("timed out") {
-                                        (e, None)
+                                    let (error_block, position) = if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
+                                        (msg.to_string(), None)
                                     } else {
                                         (format!("Failed to detect system: {}", e), None)
                                     };
@@ -296,8 +305,8 @@ impl EvalOrchestrator {
                             }
                         }
                         Ok(Err(stderr)) => {
-                            let (error_block, position) = if stderr.contains("timed out") {
-                                (stderr, None)
+                            let (error_block, position) = if let Some(msg) = stderr.strip_prefix(TIMEOUT_SENTINEL) {
+                                (msg.to_string(), None)
                             } else {
                                 parse_nix_stderr(&stderr)
                             };
@@ -355,21 +364,20 @@ async fn publish_eval_result<F>(
 ) where
     F: Fn(EvalOutput),
 {
+    // One atomic decision under the last-known-good lock: the generation
+    // re-check, the state write, and the publish happen together, so a
+    // newer trigger can never observe an updated last-known-good document
+    // that diagnostics were never shown (or vice versa).
+    let mut guard = last_known_good.write().await;
     if generation.load(Ordering::SeqCst) != current_gen {
         return;
     }
-
     if let EvalOutput::Success(doc) = &output {
-        let mut guard = last_known_good.write().await;
-        if generation.load(Ordering::SeqCst) != current_gen {
-            return;
-        }
         *guard = Some(doc.clone());
     }
-
-    if generation.load(Ordering::SeqCst) == current_gen {
-        on_eval_complete(output);
-    }
+    // `on_eval_complete` is synchronous; holding the write guard across it
+    // cannot deadlock (readers use the async lock and cannot run inside it).
+    on_eval_complete(output);
 }
 #[cfg(test)]
 mod tests {
@@ -647,8 +655,11 @@ mod tests {
 
         // Trigger 1
         orchestrator.trigger_eval();
-        // Wait for debounce so trigger 1 starts running
-        sleep(Duration::from_millis(350)).await;
+        // Wait until trigger 1's evaluation is observably in flight — a fixed
+        // debounce-sized sleep races on loaded CI runners.
+        while spawn_count.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(10)).await;
+        }
 
         // Trigger 2 (supersedes trigger 1 while trigger 1 is sleeping inside eval_analysis)
         orchestrator.trigger_eval();
