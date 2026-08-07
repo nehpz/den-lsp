@@ -1,5 +1,6 @@
 /server/target/
 target/
 .direnv/
-evidence-metrics.jsonl
-evidence-metrics-artifacts/
+/evidence-metrics.jsonl
+/evidence-metrics-artifacts/
+runs/**/*-artifacts/
