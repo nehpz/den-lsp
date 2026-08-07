@@ -110,6 +110,44 @@ else
   log_fail "Stub mode with --no-findings -> controlArm=true" "Exit code $EC4 or metrics mismatch"
 fi
 
+# Test 5: Findings presentation includes fix/docRef/column and gracefully omits position when null
+TEST5_PRE_JSON='{
+  "version": 1,
+  "findings": [
+    {
+      "rule": "duplication",
+      "severity": "gating",
+      "aspectPath": "web.nixos",
+      "position": { "file": "modules/web.nix", "line": 12, "column": 5 },
+      "message": "Duplicate nixos configuration",
+      "fix": "Consolidate openssh config",
+      "docRef": "https://den.dev/docs/rules/duplication"
+    },
+    {
+      "rule": "granularity",
+      "severity": "advisory",
+      "position": null,
+      "message": "Found single-option aspects",
+      "fix": "Consolidate single-option aspects",
+      "docRef": "https://den.dev/docs/guides/configure-aspects"
+    }
+  ]
+}'
+
+# Exercise the production formatter, not a copy of it.
+TEST5_TEXT="$(jq -r -f "${SCRIPT_DIR}/findings-format.jq" <<< "$TEST5_PRE_JSON")"
+
+if grep -q "Column: 5" <<< "$TEST5_TEXT" && \
+   grep -q "Fix: Consolidate openssh config" <<< "$TEST5_TEXT" && \
+   grep -q "DocRef: https://den.dev/docs/rules/duplication" <<< "$TEST5_TEXT" && \
+   grep -q "Fix: Consolidate single-option aspects" <<< "$TEST5_TEXT" && \
+   grep -q "DocRef: https://den.dev/docs/guides/configure-aspects" <<< "$TEST5_TEXT" && \
+   ! grep -A 3 "Rule: granularity" <<< "$TEST5_TEXT" | grep -q "File:"; then
+  log_pass "Runner presentation: includes fix/docRef/column and gracefully omits position when null"
+else
+  log_fail "Runner presentation: includes fix/docRef/column and gracefully omits position when null" "Presentation text mismatch: $TEST5_TEXT"
+fi
+
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 
 if [ "${FAILED_TESTS}" -ne 0 ]; then
