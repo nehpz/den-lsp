@@ -16,7 +16,7 @@ if [ -z "${REPO_DIR:-}" ] || [ ! -f "${REPO_DIR}/fixtures/scenarios/lib.nix" ]; 
 fi
 export REPO_DIR="${REPO_DIR}"
 # Host directories for agent CLIs (e.g. claude, omp), applied only to adapter invocation
-ADAPTER_PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin"
+ADAPTER_PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin"
 
 NIX_ERR_FILE=""
 CURRENT_TEMP_PARENT=""
@@ -211,11 +211,16 @@ ARTIFACTS_DIR="${OUT_FILE%.jsonl}-artifacts"
 rm -rf "${ARTIFACTS_DIR}"
 mkdir -p "${ARTIFACTS_DIR}"
 
+# Provenance: which fixture state this sweep ran against ("-dirty" marks
+# uncommitted scenario edits; content versioning is git's job, the manifest
+# version field only tracks the schema).
+SCENARIO_REV="$(git -C "$REPO_DIR" describe --always --dirty 2>/dev/null || echo unknown)"
 jq -c -n \
   --argjson selected "$NUM_SELECTED" \
   --arg adapter "$ADAPTER_NAME" \
   --arg set "$SET_NAME" \
-  '{sweepMeta: true, selected: $selected, adapter: $adapter, set: $set}' >> "$OUT_FILE"
+  --arg scenarioRev "$SCENARIO_REV" \
+  '{sweepMeta: true, selected: $selected, adapter: $adapter, set: $set, scenarioRev: $scenarioRev}' >> "$OUT_FILE"
 # Process each scenario sequentially
 SCENARIO_COUNT="$(jq 'length' <<< "$SELECTED_SCENARIOS")"
 for ((i=0; i<SCENARIO_COUNT; i++)); do
@@ -368,6 +373,10 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
 
   ADAPTER_STATUS=""
   ADAPTER_TURNS="null"
+  ADAPTER_MODEL=""
+  ADAPTER_THINKING=""
+  ADAPTER_COST="null"
+  ADAPTER_TOKENS="null"
 
   if [ $ADAPTER_EC -eq 124 ] || [ $ADAPTER_EC -eq 137 ] || [ $ADAPTER_EC -eq 143 ]; then
     ADAPTER_STATUS="timeout"
@@ -376,6 +385,16 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   else
     if jq -e . >/dev/null 2>&1 <<< "$ADAPTER_OUT"; then
       ADAPTER_STATUS="$(jq -r '.status // "failed"' <<< "$ADAPTER_OUT")"
+      ADAPTER_MODEL="$(jq -r '.model // empty' <<< "$ADAPTER_OUT")"
+      ADAPTER_THINKING="$(jq -r '.thinking // empty' <<< "$ADAPTER_OUT")"
+      PARSED_COST="$(jq -r '.cost // "null"' <<< "$ADAPTER_OUT")"
+      if [ "$PARSED_COST" != "null" ] && [[ "$PARSED_COST" =~ ^[0-9.]+$ ]]; then
+        ADAPTER_COST="$PARSED_COST"
+      fi
+      PARSED_TOKENS="$(jq -r '.tokens // "null"' <<< "$ADAPTER_OUT")"
+      if [ "$PARSED_TOKENS" != "null" ] && [[ "$PARSED_TOKENS" =~ ^[0-9]+$ ]]; then
+        ADAPTER_TOKENS="$PARSED_TOKENS"
+      fi
       PARSED_TURNS="$(jq -r '.turns' <<< "$ADAPTER_OUT")"
       if [ "$PARSED_TURNS" != "null" ] && [[ "$PARSED_TURNS" =~ ^[0-9]+$ ]]; then
         ADAPTER_TURNS="$PARSED_TURNS"
@@ -472,6 +491,8 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     --argjson knownMiss "$KNOWN_MISS" \
     --argjson goldenable "$GOLDENABLE" \
     --arg adapter "$ADAPTER_NAME" \
+    --arg model "$ADAPTER_MODEL" \
+    --arg thinking "$ADAPTER_THINKING" \
     --argjson controlArm "$NO_FINDINGS" \
     --argjson detected "$DETECTED" \
     --argjson precise "$PRECISE" \
@@ -479,6 +500,8 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     --arg verdictReason "$VERDICT_REASON" \
     --argjson wallClockSec "$WALL_CLOCK_SEC" \
     --argjson turns "$ADAPTER_TURNS" \
+    --argjson cost "$ADAPTER_COST" \
+    --argjson tokens "$ADAPTER_TOKENS" \
     --arg timestamp "$TIMESTAMP_ISO" \
     '{
       scenario: $scenario,
@@ -487,6 +510,8 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
       knownMiss: $knownMiss,
       goldenable: $goldenable,
       adapter: $adapter,
+      model: (if $model == "" then null else $model end),
+      thinking: (if $thinking == "" then null else $thinking end),
       controlArm: $controlArm,
       detected: $detected,
       precise: $precise,
@@ -494,6 +519,8 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
       verdictReason: $verdictReason,
       wallClockSec: $wallClockSec,
       turns: $turns,
+      cost: $cost,
+      tokens: $tokens,
       timestamp: $timestamp
     }' >> "$OUT_FILE"
   SCENARIO_ARTIFACTS_DIR="${OUT_FILE%.jsonl}-artifacts/${NAME}"
