@@ -189,6 +189,36 @@ else
   log_fail "Incomplete sweep refusal" "exit code $EC7, output: $OUT7"
 fi
 
+# Test 8: Provenance fallbacks — no sweepMeta line (adapter falls back to rows,
+# scenarioRev unrecorded), cost/tokens on 3 of 5 rows (partial-coverage qualifier)
+TEST8_FILE="${TMP_DIR}/provenance_metrics.jsonl"
+cat << 'EOF' > "${TEST8_FILE}"
+{"scenario":"p1","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","model":"m1","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"cost":0.5,"tokens":100,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"p2","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","model":"m1","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"cost":0.5,"tokens":100,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"p3","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","model":"m1","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"cost":0.51,"tokens":100,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"p4","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","model":"m1","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"cost":null,"tokens":null,"timestamp":"2026-08-03T00:00:00Z"}
+{"scenario":"p5","kind":"finding","clearCut":true,"knownMiss":false,"goldenable":true,"adapter":"stub","model":"m1","controlArm":false,"detected":true,"precise":true,"repaired":true,"verdictReason":"match_and_clean","wallClockSec":10,"turns":1,"cost":null,"tokens":null,"timestamp":"2026-08-03T00:00:00Z"}
+EOF
+
+OUT8=""
+EC8=0
+set +e
+OUT8="$("${REPORT_BASH}" --in "${TEST8_FILE}" 2>&1)"
+EC8=$?
+set -e
+
+if [ $EC8 -eq 0 ] && \
+   grep -q -- "- Adapter: stub" <<< "$OUT8" && \
+   grep -q -- "- Model: m1" <<< "$OUT8" && \
+   grep -q -- "- Thinking: adapter default" <<< "$OUT8" && \
+   grep -q -- "- Scenario Rev: unrecorded" <<< "$OUT8" && \
+   grep -q -- "- Total LLM Cost: \$1.51 (recorded on 3 of 5 rows)" <<< "$OUT8" && \
+   grep -q -- "- Total Tokens: 300 (recorded on 3 of 5 rows)" <<< "$OUT8"; then
+  log_pass "Provenance fallbacks: adapter from rows, unrecorded rev, partial cost/token qualifiers"
+else
+  log_fail "Provenance fallbacks" "exit code $EC8, output: $OUT8"
+fi
+
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 
 if [ "${FAILED_TESTS}" -ne 0 ]; then
