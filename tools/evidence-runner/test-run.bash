@@ -110,6 +110,66 @@ else
   log_fail "Stub mode with --no-findings -> controlArm=true" "Exit code $EC4 or metrics mismatch"
 fi
 
+# Test 5: Ephemeral mode evaluation of uninstrumented workspace matches instrumented result
+EPH_UNINSTR_JSON="$("${SCRIPT_DIR}/eval-workspace.bash" "${SCRIPT_DIR}/../../fixtures/consumer-variants/uninstrumented" 2>/dev/null)"
+EPH_INSTR_JSON="$("${SCRIPT_DIR}/eval-workspace.bash" "${SCRIPT_DIR}/../../fixtures/consumer" 2>/dev/null)"
+
+if [ -n "$EPH_UNINSTR_JSON" ] && [ -n "$EPH_INSTR_JSON" ] && \
+   [ "$(jq -c '.findings' <<< "$EPH_UNINSTR_JSON")" = "$(jq -c '.findings' <<< "$EPH_INSTR_JSON")" ] && \
+   [ "$(jq -r '.summary.gating' <<< "$EPH_UNINSTR_JSON")" = "0" ]; then
+  log_pass "Ephemeral mode: uninstrumented workspace evaluation matches instrumented result"
+else
+  log_fail "Ephemeral mode: uninstrumented workspace evaluation matches instrumented result" "Payload mismatch or evaluation failed"
+fi
+
+# Test 6: Findings presentation in run.bash includes fix/docRef/column and gracefully omits position when null
+TEST6_PRE_JSON='{
+  "version": 1,
+  "findings": [
+    {
+      "rule": "duplication",
+      "severity": "gating",
+      "aspectPath": "web.nixos",
+      "position": { "file": "modules/web.nix", "line": 12, "column": 5 },
+      "message": "Duplicate nixos configuration",
+      "fix": "Consolidate openssh config",
+      "docRef": "https://den.dev/docs/rules/duplication"
+    },
+    {
+      "rule": "granularity",
+      "severity": "advisory",
+      "position": null,
+      "message": "Found single-option aspects",
+      "fix": "Consolidate single-option aspects",
+      "docRef": "https://den.dev/docs/guides/configure-aspects"
+    }
+  ]
+}'
+
+TEST6_TEXT="$(jq -r '
+  .findings // [] | map(
+    "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
+    (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
+    (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
+    (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
+    (if .position and .position.column then "\n  Column: \(.position.column)" else "" end) +
+    (if .message then "\n  Message: \(.message)" else "" end) +
+    (if .fix then "\n  Fix: \(.fix)" else "" end) +
+    (if .docRef then "\n  DocRef: \(.docRef)" else "" end)
+  ) | join("\n\n")
+' <<< "$TEST6_PRE_JSON")"
+
+if grep -q "Column: 5" <<< "$TEST6_TEXT" && \
+   grep -q "Fix: Consolidate openssh config" <<< "$TEST6_TEXT" && \
+   grep -q "DocRef: https://den.dev/docs/rules/duplication" <<< "$TEST6_TEXT" && \
+   grep -q "Fix: Consolidate single-option aspects" <<< "$TEST6_TEXT" && \
+   grep -q "DocRef: https://den.dev/docs/guides/configure-aspects" <<< "$TEST6_TEXT" && \
+   ! grep -A 3 "Rule: granularity" <<< "$TEST6_TEXT" | grep -q "File:"; then
+  log_pass "Runner presentation: includes fix/docRef/column and gracefully omits position when null"
+else
+  log_fail "Runner presentation: includes fix/docRef/column and gracefully omits position when null" "Presentation text mismatch: $TEST6_TEXT"
+fi
+
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 
 if [ "${FAILED_TESTS}" -ne 0 ]; then

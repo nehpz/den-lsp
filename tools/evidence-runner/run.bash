@@ -292,7 +292,10 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
             (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
             (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
             (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
-            (if .message then "\n  Message: \(.message)" else "" end)
+            (if .position and .position.column then "\n  Column: \(.position.column)" else "" end) +
+            (if .message then "\n  Message: \(.message)" else "" end) +
+            (if .fix then "\n  Fix: \(.fix)" else "" end) +
+            (if .docRef then "\n  DocRef: \(.docRef)" else "" end)
           ) | join("\n\n")
         ' <<< "$PRE_EVAL_JSON")"
       fi

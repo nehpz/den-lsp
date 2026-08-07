@@ -50,4 +50,16 @@ if [ -n "${DEN_DIR:-}" ]; then
   OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
 fi
 OVERRIDE_ARGS+=(--override-input den-lsp "${REPO_DIR}")
-nix eval --impure --json "path:${WORKSPACE_DIR}#den-lsp-analysis" "${OVERRIDE_ARGS[@]}" | sed -n '/^{/,$p'
+
+IS_INSTRUMENTED=false
+if [ -f "${WORKSPACE_DIR}/flake.nix" ] && grep -qE 'den-lsp\.url|inputs\.den-lsp|den-lsp\.flakeModules' "${WORKSPACE_DIR}/flake.nix"; then
+  IS_INSTRUMENTED=true
+fi
+
+if [ "$IS_INSTRUMENTED" = true ]; then
+  nix eval --impure --json "path:${WORKSPACE_DIR}#den-lsp-analysis" "${OVERRIDE_ARGS[@]}" | sed -n '/^{/,$p'
+else
+  EPHEMERAL_NIX="${REPO_DIR}/nix/ephemeral.nix"
+  NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = \"path:${WORKSPACE_DIR}\"; den-lsp = \"path:${REPO_DIR}\"; }"
+  nix eval --impure --json "${OVERRIDE_ARGS[@]}" --expr "$NIX_EXPR" | sed -n '/^{/,$p'
+fi
