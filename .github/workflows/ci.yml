@@ -17,7 +17,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/determinate-nix-action@v3.21.9
       - name: Run root flake check
-        run: nix flake check
+        # --impure: the ephemeral wrapper tests evaluate fixture flakes via
+        # builtins.getFlake on path: refs, which pure evaluation forbids.
+        run: nix flake check --impure
       - name: Run server unit tests
         run: nix develop -c cargo test --manifest-path server/Cargo.toml
       - name: Run hermetic scenario check
