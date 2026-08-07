@@ -18,6 +18,8 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3.21.9
       - name: Run root flake check
         run: nix flake check
+      - name: Run server unit tests
+        run: nix develop -c cargo test --manifest-path server/Cargo.toml
       - name: Run hermetic scenario check
         run: nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"
       - name: Run consumer fixture E2E
