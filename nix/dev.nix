@@ -44,6 +44,25 @@
           }
         }/bin/evidence-runner";
       };
+      apps.den-lsp-check = {
+        type = "app";
+        program = "${
+          pkgs.writeShellApplication {
+            name = "den-lsp-check";
+            runtimeInputs = [
+              pkgs.bash
+              pkgs.jq
+              pkgs.coreutils
+              pkgs.nix
+            ];
+            text = ''
+              export EPHEMERAL_NIX="${../nix/ephemeral.nix}"
+              export DEN_LSP_FLAKE="${inputs.self}"
+              exec ${../tools/cli/den-lsp-check.bash} "$@"
+            '';
+          }
+        }/bin/den-lsp-check";
+      };
 
       packages.den-lsp-server = pkgs.rustPlatform.buildRustPackage {
         pname = "den-lsp-server";
