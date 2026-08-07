@@ -111,6 +111,13 @@ READOUT="$(jq -r -R -n '
   ($parsed | map(select(.valid == true and .val.sweepMeta != true) | .val)) as $all |
   ($parsed | map(select(.valid == false)) | length) as $skipped_lines |
 
+  ($parsed | map(select(.valid == true and .val.sweepMeta == true) | .val)) as $metas |
+  ($metas[0] // {}) as $meta |
+  ($all | map(.model // empty) | unique) as $models |
+  ($all | map(.thinking // empty) | unique) as $thinkings |
+  ($all | map(.cost | select(type == "number"))) as $cost_vals |
+  ($all | map(.tokens | select(type == "number"))) as $token_vals |
+
   def is_clear_cut: .clearCut == true and .goldenable == true and .controlArm == false and .knownMiss == false;
 
   ($all | map(select(is_clear_cut))) as $cc |
@@ -144,6 +151,13 @@ READOUT="$(jq -r -R -n '
       "## Tool-Bug Triage\n\nThe following clear-cut scenario(s) failed detection or precision requirements (KD5/AE5). Any detection or precision miss is triaged as a tool bug by definition.\n\n| Scenario | Kind | Detected | Precise | Verdict Reason |\n| --- | --- | --- | --- | --- |\n" +
       ($triage_rows | map("| \(.scenario) | \(.kind) | \(.detected) | \(.precise) | \(.verdictReason) |") | join("\n")) + "\n"
     end),
+    "## Provenance\n",
+    "- Adapter: \($meta.adapter // ($all | map(.adapter // empty) | unique | if length == 0 then "unrecorded" else join(", ") end))",
+    "- Model: \(if ($models | length) == 0 then "unrecorded" else ($models | join(", ")) end)",
+    "- Thinking: \(if ($thinkings | length) == 0 then "adapter default" else ($thinkings | join(", ")) end)",
+    "- Scenario Rev: \($meta.scenarioRev // "unrecorded")",
+    "- Total LLM Cost: \(if ($cost_vals | length) == 0 then "unrecorded" else ("$" + (($cost_vals | add * 100 | round) / 100 | tostring) + (if ($cost_vals | add) == 0 then " (provider reported zero cost)" else "" end) + (if ($cost_vals | length) < ($all | length) then " (recorded on " + ($cost_vals | length | tostring) + " of " + ($all | length | tostring) + " rows)" else "" end)) end)",
+    "- Total Tokens: \(if ($token_vals | length) == 0 then "unrecorded" else (($token_vals | add | tostring) + (if ($token_vals | length) < ($all | length) then " (recorded on " + ($token_vals | length | tostring) + " of " + ($all | length | tostring) + " rows)" else "" end)) end)\n",
     "## Headline Metrics\n",
     "- Scenarios Evaluated (Clear-Cut): \($cc_len)",
     "- Catch Rate (detected): \($det_cnt)/\($cc_len) (\(pct($det_cnt; $cc_len)))",
