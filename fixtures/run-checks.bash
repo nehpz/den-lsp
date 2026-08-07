@@ -260,8 +260,44 @@ else
   FAILED=1
 fi
 
-# 9. Text-mode smoke tests
-echo "--> CLI Assertion 9: Text-mode smoke tests"
+# 9. Zero timeout rejected (covers #4)
+echo "--> CLI Assertion 9: Zero timeout rejected"
+run_cli_check --json --timeout 0 "${REPO_DIR}/fixtures/consumer"
+if [ "$CLI_EXIT" -eq 64 ] && [ -z "$CLI_STDOUT" ]; then
+  echo "PASS: CLI Zero timeout rejected (exit 64, empty stdout)"
+else
+  echo "FAIL: CLI Zero timeout expected exit 64 and empty stdout, got exit $CLI_EXIT"
+  echo "STDOUT: $CLI_STDOUT"
+  echo "STDERR: $CLI_STDERR"
+  FAILED=1
+fi
+
+# 10. Uninstrumented clean target (covers #13)
+echo "--> CLI Assertion 10: Uninstrumented clean target"
+run_cli_check --json "${REPO_DIR}/fixtures/consumer-variants/uninstrumented"
+if [ "$CLI_EXIT" -eq 0 ] && echo "$CLI_STDOUT" | jq -e '.version == 1 and .summary.gating == 0 and .summary.advisory == 0' >/dev/null; then
+  echo "PASS: CLI Uninstrumented clean target (exit 0, version 1, summary zeros)"
+else
+  echo "FAIL: CLI Uninstrumented clean target expected exit 0 and zero summary, got exit $CLI_EXIT"
+  echo "STDOUT: $CLI_STDOUT"
+  echo "STDERR: $CLI_STDERR"
+  FAILED=1
+fi
+
+# 11. Uninstrumented gating target (covers #13)
+echo "--> CLI Assertion 11: Uninstrumented gating target"
+run_cli_check --json "${REPO_DIR}/fixtures/consumer-variants/gating-dup-uninstrumented"
+if [ "$CLI_EXIT" -eq 1 ] && echo "$CLI_STDOUT" | jq -e '.version == 1 and .summary.gating > 0' >/dev/null; then
+  echo "PASS: CLI Uninstrumented gating target (exit 1, gating finding)"
+else
+  echo "FAIL: CLI Uninstrumented gating target expected exit 1 and gating finding, got exit $CLI_EXIT"
+  echo "STDOUT: $CLI_STDOUT"
+  echo "STDERR: $CLI_STDERR"
+  FAILED=1
+fi
+
+# 12. Text-mode smoke tests
+echo "--> CLI Assertion 12: Text-mode smoke tests"
 run_cli_check "${REPO_DIR}/fixtures/consumer"
 if [ "$CLI_EXIT" -eq 0 ] && echo "$CLI_STDOUT" | grep -q "den-lsp: no findings."; then
   echo "PASS: CLI Text-mode clean fixture (exit 0, human rendering)"
@@ -286,6 +322,24 @@ if [ "$CLI_EXIT" -eq 0 ] && echo "$CLI_STDOUT" | grep -q "gating"; then
 else
   echo "FAIL: CLI Text-mode gating variant --draft expected exit 0, got exit $CLI_EXIT"
   echo "STDOUT: $CLI_STDOUT"
+  FAILED=1
+fi
+
+# 13. Packaged app (nix run) exercises the store-pinned wiring: the ephemeral
+# wrapper must resolve its sibling imports from the flake source copy, not a
+# lone interpolated file.
+echo "--> CLI Assertion 13: Packaged app via nix run (uninstrumented target)"
+set +e
+PKG_STDERR_FILE="$(mktemp)"
+PKG_STDOUT="$(DEN_LSP_CHECK_NIX_ARGS="${OVERRIDE_ARGS[*]}" nix run "path:${REPO_DIR}#den-lsp-check" -- --json "${REPO_DIR}/fixtures/consumer-variants/gating-dup-uninstrumented" 2>"$PKG_STDERR_FILE")"
+PKG_EXIT=$?
+set -e
+if [ "$PKG_EXIT" -eq 1 ] && echo "$PKG_STDOUT" | jq -e '.version == 1 and .summary.gating > 0' >/dev/null; then
+  echo "PASS: Packaged app via nix run (exit 1, gating finding)"
+else
+  echo "FAIL: Packaged app via nix run expected exit 1 and gating finding, got exit $PKG_EXIT"
+  echo "STDOUT: $PKG_STDOUT"
+  echo "STDERR: $(tail -5 "$PKG_STDERR_FILE")"
   FAILED=1
 fi
 echo

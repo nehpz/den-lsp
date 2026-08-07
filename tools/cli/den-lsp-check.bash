@@ -8,11 +8,7 @@ set -euo pipefail
 # Contracts (KTD3, KTD4, KTD5):
 #   - Evaluates target workspace at invocation time via the U1 ephemeral wrapper (nix/ephemeral.nix).
 #   - Workspace default is cwd.
-#   - Exit taxonomy:
-#       0 = pass (clean, advisory-only, or gating under --draft)
-#       1 = gating findings under --gate (default mode)
-#       2 = evaluation failure (kind: eval-error) OR unsupported target (kind: unsupported)
-#       3 = timeout (kind: timeout)
+#       3 = timeout (kind: timeout) — coreutils timeout exit code 124
 #      64 = usage error (unknown flag / invalid options; nothing on stdout)
 #   - Output:
 #       Default: human text rendered per nix/engine/render.nix.
@@ -78,7 +74,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [[ "$TIMEOUT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+if ! [[ "$TIMEOUT" =~ ^[0-9]+(\.[0-9]+)?$ ]] || [[ "$TIMEOUT" =~ ^0+(\.0+)?$ ]]; then
   echo "error: invalid timeout value '$TIMEOUT'" >&2
   exit 64
 fi
@@ -89,7 +85,7 @@ if [[ "$RAW_WORKSPACE" =~ ^(github:|git:|path:) ]]; then
 elif [ -d "$RAW_WORKSPACE" ]; then
   WORKSPACE="$(cd "$RAW_WORKSPACE" && pwd)"
 elif [ -f "$RAW_WORKSPACE" ]; then
-  WORKSPACE="$(cd "$(dirname "$RAW_WORKSPACE")" && pwd)/$(basename "$RAW_WORKSPACE")"
+  WORKSPACE="$(cd "$(dirname "$RAW_WORKSPACE")" && pwd)"
 else
   WORKSPACE="$RAW_WORKSPACE"
 fi
@@ -110,7 +106,8 @@ NIX_STDOUT="$(mktemp)"
 NIX_STDERR="$(mktemp)"
 trap 'rm -f "$NIX_STDOUT" "$NIX_STDERR"' EXIT
 
-NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = \"${WORKSPACE}\"; den-lsp = ${DEN_LSP_FLAKE}; }"
+WORKSPACE_NIX="$(printf '%s' "$WORKSPACE" | jq -Rs .)"
+NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = ${DEN_LSP_FLAKE}; }"
 
 set +e
 # ${NIX_ARGS+...}: empty-array expansion under `set -u` errors on bash < 4.4 (macOS system bash).
@@ -118,7 +115,9 @@ timeout "${TIMEOUT}s" nix eval --impure --json ${NIX_ARGS+"${NIX_ARGS[@]}"} --ex
 EVAL_EXIT=$?
 set -e
 
-if [ "$EVAL_EXIT" -eq 124 ] || [ "$EVAL_EXIT" -eq 137 ]; then
+# Coreutils `timeout` returns exit status 124 when timing out.
+# Exit status 137 (SIGKILL/OOM) is mapped to eval-error (exit status 2).
+if [ "$EVAL_EXIT" -eq 124 ]; then
   cat "$NIX_STDERR" >&2
   if [ "$JSON_MODE" = true ]; then
     jq -n --arg sec "$TIMEOUT" '{"version":1,"error":{"kind":"timeout","message":("Evaluation timed out after " + $sec + " seconds")}}'
@@ -129,10 +128,12 @@ if [ "$EVAL_EXIT" -eq 124 ] || [ "$EVAL_EXIT" -eq 137 ]; then
 fi
 
 if [ "$EVAL_EXIT" -ne 0 ]; then
+  if [ "$EVAL_EXIT" -eq 137 ] && [ ! -s "$NIX_STDERR" ]; then
+    echo "evaluation process was killed (exit status 137, possibly OOM)" >"$NIX_STDERR"
+  fi
   cat "$NIX_STDERR" >&2
   if [ "$JSON_MODE" = true ]; then
-    STDERR_TEXT="$(cat "$NIX_STDERR")"
-    jq -n --arg msg "$STDERR_TEXT" '{"version":1,"error":{"kind":"eval-error","message":$msg}}'
+    jq -n --rawfile msg "$NIX_STDERR" '{"version":1,"error":{"kind":"eval-error","message":$msg}}'
   else
     echo "den-lsp: error [eval-error]: evaluation failed" >&2
   fi
@@ -142,6 +143,14 @@ fi
 # Evaluation succeeded (nix eval exit 0)
 cat "$NIX_STDERR" >&2
 
+if ! jq empty "$NIX_STDOUT" 2>/dev/null; then
+  if [ "$JSON_MODE" = true ]; then
+    jq -n --arg msg "invalid JSON output from nix eval" '{"version":1,"error":{"kind":"eval-error","message":$msg}}'
+  else
+    echo "den-lsp: error [eval-error]: invalid JSON output from nix eval" >&2
+  fi
+  exit 2
+fi
 IS_ERROR="$(jq -r '.error != null' "$NIX_STDOUT" 2>/dev/null || echo "false")"
 if [ "$IS_ERROR" = "true" ]; then
   if [ "$JSON_MODE" = true ]; then

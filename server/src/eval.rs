@@ -227,30 +227,40 @@ impl EvalOrchestrator {
                                     s
                                 }
                                 Ok(Err(e)) => {
-                                    if generation.load(Ordering::SeqCst) == current_gen {
-                                        let (error_block, position) = if e.contains("timed out") {
-                                            (e, None)
-                                        } else {
-                                            (format!("Failed to detect system: {}", e), None)
-                                        };
-                                        on_eval_complete(EvalOutput::Error {
+                                    let (error_block, position) = if e.contains("timed out") {
+                                        (e, None)
+                                    } else {
+                                        (format!("Failed to detect system: {}", e), None)
+                                    };
+                                    publish_eval_result(
+                                        &generation,
+                                        current_gen,
+                                        &last_known_good,
+                                        on_eval_complete.as_ref(),
+                                        EvalOutput::Error {
                                             error_block,
                                             position,
-                                        });
-                                    }
+                                        },
+                                    )
+                                    .await;
                                     return;
                                 }
                                 Err(_) => {
-                                    if generation.load(Ordering::SeqCst) == current_gen {
-                                        let err_msg = format!(
-                                            "Nix system detection timed out after {}s",
-                                            eval_timeout.as_secs()
-                                        );
-                                        on_eval_complete(EvalOutput::Error {
+                                    let err_msg = format!(
+                                        "Nix system detection timed out after {}s",
+                                        eval_timeout.as_secs()
+                                    );
+                                    publish_eval_result(
+                                        &generation,
+                                        current_gen,
+                                        &last_known_good,
+                                        on_eval_complete.as_ref(),
+                                        EvalOutput::Error {
                                             error_block: err_msg,
                                             position: None,
-                                        });
-                                    }
+                                        },
+                                    )
+                                    .await;
                                     return;
                                 }
                             }
@@ -264,30 +274,24 @@ impl EvalOrchestrator {
                     )
                     .await;
 
-                    if generation.load(Ordering::SeqCst) != current_gen {
-                        return;
-                    }
-
-                    match eval_res {
+                    let output = match eval_res {
                         Ok(Ok(json_str)) => {
                             match serde_json::from_str::<AnalysisDocument>(&json_str) {
                                 Ok(doc) => {
                                     if doc.version == 1 {
-                                        *last_known_good.write().await = Some(doc.clone());
-                                        on_eval_complete(EvalOutput::Success(doc));
+                                        EvalOutput::Success(doc)
                                     } else {
-                                        on_eval_complete(
-                                            EvalOutput::VersionMismatchOrInvalidJson(format!(
-                                                "Unknown analysis document version: {}",
-                                                doc.version
-                                            )),
-                                        );
+                                        EvalOutput::VersionMismatchOrInvalidJson(format!(
+                                            "Unknown analysis document version: {}",
+                                            doc.version
+                                        ))
                                     }
                                 }
                                 Err(err) => {
-                                    on_eval_complete(EvalOutput::VersionMismatchOrInvalidJson(
-                                        format!("Failed to parse analysis JSON: {}", err),
-                                    ));
+                                    EvalOutput::VersionMismatchOrInvalidJson(format!(
+                                        "Failed to parse analysis JSON: {}",
+                                        err
+                                    ))
                                 }
                             }
                         }
@@ -297,22 +301,31 @@ impl EvalOrchestrator {
                             } else {
                                 parse_nix_stderr(&stderr)
                             };
-                            on_eval_complete(EvalOutput::Error {
+                            EvalOutput::Error {
                                 error_block,
                                 position,
-                            });
+                            }
                         }
                         Err(_) => {
                             let err_msg = format!(
                                 "Nix evaluation timed out after {}s",
                                 eval_timeout.as_secs()
                             );
-                            on_eval_complete(EvalOutput::Error {
+                            EvalOutput::Error {
                                 error_block: err_msg,
                                 position: None,
-                            });
+                            }
                         }
-                    }
+                    };
+
+                    publish_eval_result(
+                        &generation,
+                        current_gen,
+                        &last_known_good,
+                        on_eval_complete.as_ref(),
+                        output,
+                    )
+                    .await;
                 }));
             }
         });
@@ -331,6 +344,31 @@ impl EvalOrchestrator {
 
     pub async fn get_last_known_good(&self) -> Option<AnalysisDocument> {
         self.last_known_good.read().await.clone()
+    }
+}
+async fn publish_eval_result<F>(
+    generation: &AtomicU64,
+    current_gen: u64,
+    last_known_good: &RwLock<Option<AnalysisDocument>>,
+    on_eval_complete: &F,
+    output: EvalOutput,
+) where
+    F: Fn(EvalOutput),
+{
+    if generation.load(Ordering::SeqCst) != current_gen {
+        return;
+    }
+
+    if let EvalOutput::Success(doc) = &output {
+        let mut guard = last_known_good.write().await;
+        if generation.load(Ordering::SeqCst) != current_gen {
+            return;
+        }
+        *guard = Some(doc.clone());
+    }
+
+    if generation.load(Ordering::SeqCst) == current_gen {
+        on_eval_complete(output);
     }
 }
 #[cfg(test)]
@@ -662,17 +700,91 @@ mod tests {
             sleep(Duration::from_millis(10)).await;
         }
 
-        // A newer trigger supersedes gen 1 while its evaluation is still in flight.
+        // A newer trigger supersedes gen 1 while its evaluation is still in flight
+        // through the production trigger_eval() path.
+        orchestrator.trigger_eval();
+
+        // Wait until the gen-2 evaluation has also started (held at the gate).
+        while spawn_count.load(Ordering::SeqCst) == 1 {
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        // Release the held evaluation so it completes.
+        hold.notify_waiters();
+
+        // Only the newer result (from gen 2) should publish.
+        let res = tokio::time::timeout(Duration::from_millis(1000), res_rx.recv()).await;
+        assert!(res.is_ok(), "Expected result from second evaluation");
+        if let Some(EvalOutput::Success(doc)) = res.unwrap() {
+            assert_eq!(doc.version, 1);
+        } else {
+            panic!("Expected EvalOutput::Success");
+        }
+
+        // Ensure no extra (stale) result was published.
+        let second_res = tokio::time::timeout(Duration::from_millis(100), res_rx.recv()).await;
+        assert!(
+            second_res.is_err(),
+            "Only the newer result should be published"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_stale_result_eval_completed_before_publish_recheck_discards() {
+        let spawn_count = Arc::new(AtomicUsize::new(0));
+        let drop_count = Arc::new(AtomicUsize::new(0));
+        let hold = Arc::new(tokio::sync::Notify::new());
+
+        let mock_doc = AnalysisDocument {
+            version: 1,
+            findings: vec![],
+            inventory: Inventory::default(),
+            summary: None,
+        };
+        let mock = Arc::new(MockEvaluator {
+            spawn_count: spawn_count.clone(),
+            drop_count,
+            detect_system_delay: None,
+            eval_analysis_delay: None,
+            json_response: serde_json::to_string(&mock_doc).unwrap(),
+            fail_stderr: None,
+            hold_eval: Some(hold.clone()),
+        });
+
+        let (res_tx, mut res_rx) = mpsc::channel(10);
+        let orchestrator = EvalOrchestrator::new_with_timeout(
+            mock,
+            PathBuf::from("/workspace"),
+            Duration::from_secs(5),
+            move |output| {
+                let _ = res_tx.try_send(output);
+            },
+        );
+
+        orchestrator.trigger_eval();
+        while spawn_count.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        // Increment generation while the eval is held to simulate a generation bump
+        // right before publish re-check.
         orchestrator.generation.fetch_add(1, Ordering::SeqCst);
 
-        // Release the held evaluation so it completes only after being superseded.
-        hold.notify_one();
+        // Release the held evaluation.
+        hold.notify_waiters();
 
-        // The stale completion must never publish.
+        // Result must be discarded and not received.
         let res = tokio::time::timeout(Duration::from_millis(300), res_rx.recv()).await;
         assert!(
             res.is_err(),
-            "Stale result must be discarded and not received by on_eval_complete"
+            "Stale result must be discarded by publish_eval_result re-check"
+        );
+
+        // last_known_good must remain unchanged (None).
+        let lkg = orchestrator.get_last_known_good().await;
+        assert!(
+            lkg.is_none(),
+            "last_known_good must not be updated for a stale eval"
         );
     }
 

@@ -84,17 +84,27 @@ let
       triggerMod = if hasTrigger then [ (dir + "/trigger.nix") ] else [ ];
       modulesDir = dir + "/modules";
       hasModules = builtins.pathExists modulesDir;
-      moduleFiles =
-        if hasModules then
-          let
-            entries = builtins.readDir modulesDir;
-            nixFiles = builtins.filter (
-              name: entries.${name} == "regular" && builtins.match ".*\\.nix" name != null
-            ) (builtins.attrNames entries);
-          in
-          map (name: modulesDir + "/${name}") nixFiles
-        else
-          [ ];
+      findNixFiles =
+        currentDir:
+        let
+          entries = builtins.readDir currentDir;
+        in
+        lib.concatLists (
+          lib.mapAttrsToList (
+            name: type:
+            let
+              subPath = currentDir + "/${name}";
+            in
+            if type == "directory" then
+              findNixFiles subPath
+            else if type == "regular" && lib.hasSuffix ".nix" name then
+              [ subPath ]
+            else
+              [ ]
+          ) entries
+        );
+      unsortedFiles = if hasModules then findNixFiles modulesDir else [ ];
+      moduleFiles = builtins.sort (a: b: toString a < toString b) unsortedFiles;
     in
     moduleFiles ++ triggerMod;
 
@@ -104,11 +114,19 @@ let
   wrapFlakePartsModule =
     module:
     let
-      modObj = if builtins.isFunction module then module else (_: module);
+      normalize = m: if builtins.isPath m then import m else m;
+      rawModule = normalize module;
     in
     arg:
     let
-      res = modObj arg;
+      evalMod = m:
+        let
+          norm = normalize m;
+        in
+        if builtins.isFunction norm then evalMod (norm arg)
+        else if builtins.isAttrs norm then norm
+        else { };
+      res = evalMod rawModule;
     in
     res
     // {
@@ -128,30 +146,58 @@ let
     };
 
   augmentedInputs =
-    if targetFlake ? inputs then
-      targetFlake.inputs
-      // lib.optionalAttrs (targetFlake.inputs ? flake-parts) {
-        flake-parts = targetFlake.inputs.flake-parts // {
-          lib = targetFlake.inputs.flake-parts.lib // {
-            mkFlake =
-              args: module:
-              targetFlake.inputs.flake-parts.lib.mkFlake args (wrapFlakePartsModule module);
-            evalFlakeModule =
-              args: module:
-              targetFlake.inputs.flake-parts.lib.evalFlakeModule args (wrapFlakePartsModule module);
-          };
+    { self = { outPath = targetDir; } // (if builtins.isAttrs targetFlake then targetFlake else { }); }
+    // (if targetFlake ? inputs then targetFlake.inputs else { })
+    // lib.optionalAttrs (targetFlake ? inputs && targetFlake.inputs ? flake-parts) {
+      flake-parts = targetFlake.inputs.flake-parts // {
+        lib = targetFlake.inputs.flake-parts.lib // {
+          mkFlake =
+            argsOrModule:
+            let
+              isArgs =
+                builtins.isAttrs argsOrModule
+                && (
+                  argsOrModule ? inputs
+                  || argsOrModule ? self
+                  || argsOrModule ? specialArgs
+                  || argsOrModule ? moduleLocation
+                );
+              origMkFlake = targetFlake.inputs.flake-parts.lib.mkFlake;
+              cleanArgs = args: if args ? inputs then { inherit (args) inputs; } else { inputs = args; };
+            in
+            if isArgs then
+              module: origMkFlake (cleanArgs argsOrModule) (wrapFlakePartsModule module)
+            else
+              origMkFlake { inputs = augmentedInputs; } (wrapFlakePartsModule argsOrModule);
+          evalFlakeModule =
+            argsOrModule:
+            let
+              isArgs =
+                builtins.isAttrs argsOrModule
+                && (
+                  argsOrModule ? inputs
+                  || argsOrModule ? self
+                  || argsOrModule ? specialArgs
+                  || argsOrModule ? moduleLocation
+                );
+              origEval = targetFlake.inputs.flake-parts.lib.evalFlakeModule;
+              cleanArgs = args: if args ? inputs then { inherit (args) inputs; } else { inputs = args; };
+            in
+            if isArgs then
+              module: origEval (cleanArgs argsOrModule) (wrapFlakePartsModule module)
+            else
+              origEval { inputs = augmentedInputs; } (wrapFlakePartsModule argsOrModule);
         };
-      }
-      // lib.optionalAttrs (targetFlake.inputs ? nixpkgs) {
-        nixpkgs = targetFlake.inputs.nixpkgs // {
-          lib = targetFlake.inputs.nixpkgs.lib // {
-            evalModules =
-              args: targetFlake.inputs.nixpkgs.lib.evalModules (wrapEvalModulesArgs args);
-          };
+      };
+    }
+    // lib.optionalAttrs (targetFlake ? inputs && targetFlake.inputs ? nixpkgs) {
+      nixpkgs = targetFlake.inputs.nixpkgs // {
+        lib = targetFlake.inputs.nixpkgs.lib // {
+          evalModules =
+            args: targetFlake.inputs.nixpkgs.lib.evalModules (wrapEvalModulesArgs args);
         };
-      }
-    else
-      { };
+      };
+    };
 
   reconstructedAnalysis =
     if rawFlake != null && rawFlake ? outputs then
@@ -170,25 +216,30 @@ let
   fallbackAnalysis =
     if hasDenInput && (targetFlake.inputs ? flake-parts) then
       let
-        eval =
-          targetFlake.inputs.flake-parts.lib.evalFlakeModule
-            { inputs = targetFlake.inputs; }
-            {
-              systems = [
-                "x86_64-linux"
-                "aarch64-linux"
-                "aarch64-darwin"
-              ];
-              imports = [
-                targetFlake.inputs.den.flakeModules.default
-                injectModule
-              ] ++ getModulesFromDir targetDir;
-            };
+        discoveredModules = getModulesFromDir targetDir;
       in
-      core.analysisFor { inherit (eval.config) den; }
+      if discoveredModules == [ ] then
+        unsupportedError "Target flake fallback module discovery found no modules in modules/ or trigger.nix."
+      else
+        let
+          eval =
+            targetFlake.inputs.flake-parts.lib.evalFlakeModule
+              { inputs = targetFlake.inputs; }
+              {
+                systems = [
+                  "x86_64-linux"
+                  "aarch64-linux"
+                  "aarch64-darwin"
+                ];
+                imports = [
+                  targetFlake.inputs.den.flakeModules.default
+                  injectModule
+                ] ++ discoveredModules;
+              };
+        in
+        core.analysisFor { inherit (eval.config) den; }
     else
       null;
-
   finalAnalysis =
     if reconstructedAnalysis != null then
       reconstructedAnalysis

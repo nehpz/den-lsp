@@ -12,7 +12,11 @@ let
   noflakePath = ./. + "/../fixtures/consumer-variants/noflake";
   nonDenPath = ./. + "/../fixtures/consumer-variants/non-den";
   brokenPath = ./. + "/../fixtures/consumer-variants/broken";
-
+  destructuredSelfPath = ./. + "/../fixtures/consumer-variants/destructured-self";
+  fallbackSubdirsPath = ./. + "/../fixtures/consumer-variants/fallback-subdirs";
+  fallbackNoModulesPath = ./. + "/../fixtures/consumer-variants/fallback-no-modules";
+  pathModulePath = ./. + "/../fixtures/consumer-variants/path-module";
+  singleArgMkFlakePath = ./. + "/../fixtures/consumer-variants/single-arg-mkflake";
   # Helper to normalize findings for comparison
   normalizeDoc = doc: {
     inherit (doc) version summary;
@@ -51,6 +55,29 @@ let
   # Scenario 6: A consumer whose Den config fails evaluation propagates an eval failure distinct from unsupported (R3 boundary).
   brokenTryEval = builtins.tryEval (ephemeral { workspace = brokenPath; den-lsp = denLspArg; });
   brokenEvalFailurePropagated = brokenTryEval.success == false;
+
+  # Scenario 7: A consumer whose outputs destructures self evaluates successfully (#1).
+  destructuredSelfDoc = ephemeral { workspace = destructuredSelfPath; den-lsp = denLspArg; };
+  destructuredSelfAnalyzed = (destructuredSelfDoc ? version) && (destructuredSelfDoc.version == 1) && (destructuredSelfDoc.summary.gating == 0);
+
+  # Scenario 8: Fallback module discovery finds modules recursively in subdirectories (#2a).
+  fallbackSubdirsDoc = ephemeral { workspace = fallbackSubdirsPath; den-lsp = denLspArg; };
+  fallbackSubdirsAnalyzed = (fallbackSubdirsDoc ? version) && (fallbackSubdirsDoc.version == 1) && (fallbackSubdirsDoc.summary.gating == 0);
+
+  # Scenario 9: Fallback module discovery with no modules yields unsupported error envelope (#2b).
+  fallbackNoModulesRes = ephemeral { workspace = fallbackNoModulesPath; den-lsp = denLspArg; };
+  unsupportedFallbackNoModules =
+    (fallbackNoModulesRes ? error)
+    && (fallbackNoModulesRes.error.kind == "unsupported")
+    && (fallbackNoModulesRes.version == 1);
+
+  # Scenario 10: A consumer passing a path module to mkFlake normalizes and evaluates without crashing (#6).
+  pathModuleDoc = ephemeral { workspace = pathModulePath; den-lsp = denLspArg; };
+  pathModuleAnalyzed = (pathModuleDoc ? version) && (pathModuleDoc.version == 1) && (pathModuleDoc.summary.gating == 0);
+
+  # Scenario 11: Single-argument mkFlake call shape is handled cleanly (#14).
+  singleArgMkFlakeDoc = ephemeral { workspace = singleArgMkFlakePath; den-lsp = denLspArg; };
+  singleArgMkFlakeAnalyzed = (singleArgMkFlakeDoc ? version) && (singleArgMkFlakeDoc.version == 1) && (singleArgMkFlakeDoc.summary.gating == 0);
 in
 {
   ephemeral-uninstrumented-base-identical = uninstrumentedBaseIdentical;
@@ -59,4 +86,9 @@ in
   ephemeral-noflake-consumer = noflakeAnalyzed;
   ephemeral-unsupported-non-den = unsupportedNonDen;
   ephemeral-broken-eval-failure = brokenEvalFailurePropagated;
+  ephemeral-destructured-self = destructuredSelfAnalyzed;
+  ephemeral-fallback-subdirs = fallbackSubdirsAnalyzed;
+  ephemeral-unsupported-fallback-no-modules = unsupportedFallbackNoModules;
+  ephemeral-path-module = pathModuleAnalyzed;
+  ephemeral-single-arg-mkflake = singleArgMkFlakeAnalyzed;
 }

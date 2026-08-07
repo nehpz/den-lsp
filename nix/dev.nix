@@ -56,9 +56,11 @@
               pkgs.nix
             ];
             text = ''
-              export EPHEMERAL_NIX="${../nix/ephemeral.nix}"
+              # Point at ephemeral.nix inside the full flake source so its
+              # relative imports (./inject-analysis.nix, ./check-core.nix) resolve.
+              export EPHEMERAL_NIX="${inputs.self}/nix/ephemeral.nix"
               export DEN_LSP_FLAKE="${inputs.self}"
-              exec ${../tools/cli/den-lsp-check.bash} "$@"
+              exec bash ${inputs.self}/tools/cli/den-lsp-check.bash "$@"
             '';
           }
         }/bin/den-lsp-check";

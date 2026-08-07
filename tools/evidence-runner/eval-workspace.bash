@@ -60,6 +60,7 @@ if [ "$IS_INSTRUMENTED" = true ]; then
   nix eval --impure --json "path:${WORKSPACE_DIR}#den-lsp-analysis" "${OVERRIDE_ARGS[@]}" | sed -n '/^{/,$p'
 else
   EPHEMERAL_NIX="${REPO_DIR}/nix/ephemeral.nix"
-  NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = \"path:${WORKSPACE_DIR}\"; den-lsp = \"path:${REPO_DIR}\"; }"
+  WORKSPACE_NIX="$(printf '%s' "path:${WORKSPACE_DIR}" | jq -Rs .)"
+  NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = \"path:${REPO_DIR}\"; }"
   nix eval --impure --json "${OVERRIDE_ARGS[@]}" --expr "$NIX_EXPR" | sed -n '/^{/,$p'
 fi
