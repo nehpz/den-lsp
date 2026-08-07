@@ -6,7 +6,7 @@
     { pkgs, ... }:
     let
       engine = inputs.self.lib;
-      engineTests = import ../tests { inherit lib engine; };
+      engineTests = import ../tests { inherit lib engine; den-lsp = inputs.self; };
       checkCond =
         name: cond:
         pkgs.runCommandLocal name { } (

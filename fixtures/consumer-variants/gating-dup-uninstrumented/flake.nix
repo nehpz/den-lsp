@@ -1,11 +1,10 @@
 {
-  description = "broken variant fixture for den-lsp tests";
+  description = "Un-instrumented gating-dup variant fixture for den-lsp tests";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     den.url = "github:denful/den";
-    den-lsp.url = "github:nehpz/den-lsp";
   };
 
   outputs =
@@ -19,7 +18,6 @@
 
       imports = [
         inputs.den.flakeModules.default
-        inputs.den-lsp.flakeModules.default
         ./modules/den.nix
         ./modules/igloo.nix
         ./trigger.nix

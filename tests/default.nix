@@ -3,7 +3,7 @@
 # checks.<system>.engine-<name>. Rule suites add their tests here:
 #   tests/structural/*.nix and tests/idiom/*.nix export { <name> = bool; }
 #   and are merged below.
-{ lib, engine }:
+{ lib, engine, den-lsp ? null }:
 let
   # Minimal synthetic IR mirroring den.lib.analysis.capture's shape.
   # Keep in sync with den nix/lib/diag/analysis.nix (IR version 1).
@@ -70,5 +70,6 @@ let
   structural = if builtins.pathExists ./structural then suiteDir ./structural else { };
   idiom = if builtins.pathExists ./idiom then suiteDir ./idiom else { };
   scenarios = if builtins.pathExists ./scenarios then suiteDir ./scenarios else { };
+  ephemeral = if builtins.pathExists ./ephemeral.nix then import ./ephemeral.nix { inherit lib engine den-lsp; } else { };
 in
-core // structural // idiom // scenarios
+core // structural // idiom // scenarios // ephemeral
