@@ -243,19 +243,40 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
   EMPTY_EXPECTED_GUARD=false
   PRE_EVAL_FAILED=false
 
+  export EVAL_WORKSPACE_SCRIPT="${EVAL_WORKSPACE_SCRIPT:-${SCRIPT_DIR}/eval-workspace.bash}"
+  PRE_EVAL_FAIL_REASON=""
+
   if [ "$KIND" = "finding" ]; then
     PRE_EVAL_JSON=""
     set +e
-    PRE_EVAL_JSON="$("${SCRIPT_DIR}/eval-workspace.bash" "${TEMP_WORKSPACE}" 2>/dev/null)"
+    PRE_EVAL_JSON="$("${EVAL_WORKSPACE_SCRIPT}" "${TEMP_WORKSPACE}" 2>/dev/null)"
     PRE_EC=$?
     set -e
     EXPECTED_FINDINGS_JSON="$(jq -c '.expectedFindings // []' <<< "$SCENARIO_OBJ" 2>/dev/null || echo "[]")"
     [ -z "$EXPECTED_FINDINGS_JSON" ] && EXPECTED_FINDINGS_JSON="[]"
 
-    if [ $PRE_EC -ne 0 ] || [ -z "$PRE_EVAL_JSON" ] || ! jq -e . >/dev/null 2>&1 <<< "$PRE_EVAL_JSON"; then
+    IS_EVAL_ERROR=false
+    if [ $PRE_EC -eq 0 ] && [ -n "$PRE_EVAL_JSON" ] && jq -e . >/dev/null 2>&1 <<< "$PRE_EVAL_JSON"; then
+      if jq -e '.error != null' >/dev/null 2>&1 <<< "$PRE_EVAL_JSON"; then
+        IS_EVAL_ERROR=true
+      fi
+    fi
+
+    if [ $PRE_EC -ne 0 ] || [ -z "$PRE_EVAL_JSON" ] || ! jq -e . >/dev/null 2>&1 <<< "$PRE_EVAL_JSON" || [ "$IS_EVAL_ERROR" = "true" ]; then
       DETECTED=false
       PRECISE=false
       PRE_EVAL_FAILED=true
+      if [ "$IS_EVAL_ERROR" = "true" ]; then
+        ERR_KIND="$(jq -r '.error.kind // "eval-error"' <<< "$PRE_EVAL_JSON")"
+        ERR_MSG="$(jq -r '.error.message // ""' <<< "$PRE_EVAL_JSON")"
+        if [ -n "$ERR_MSG" ]; then
+          PRE_EVAL_FAIL_REASON="eval_error: ${ERR_KIND}: ${ERR_MSG}"
+        else
+          PRE_EVAL_FAIL_REASON="eval_error: ${ERR_KIND}"
+        fi
+      else
+        PRE_EVAL_FAIL_REASON="pre_eval_failed"
+      fi
     else
       ACTUAL_FINDINGS_JSON="$(jq -c '.findings // []' <<< "$PRE_EVAL_JSON" 2>/dev/null || echo "[]")"
       [ -z "$ACTUAL_FINDINGS_JSON" ] && ACTUAL_FINDINGS_JSON="[]"
@@ -293,15 +314,21 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
     EXPECTED_ERROR="$(jq -r '.expectedError // ""' <<< "$SCENARIO_OBJ")"
     PRE_EVAL_ERR=""
     set +e
-    PRE_EVAL_ERR="$("${SCRIPT_DIR}/eval-workspace.bash" "${TEMP_WORKSPACE}" 2>&1)"
+    PRE_EVAL_ERR="$("${EVAL_WORKSPACE_SCRIPT}" "${TEMP_WORKSPACE}" 2>&1)"
     PRE_EC=$?
     set -e
 
-    if [ $PRE_EC -ne 0 ] && [[ "$PRE_EVAL_ERR" == *"$EXPECTED_ERROR"* ]]; then
+    IS_EVAL_ERR=false
+    if [ $PRE_EC -ne 0 ]; then
+      IS_EVAL_ERR=true
+    elif [ -n "$PRE_EVAL_ERR" ] && jq -e '.error != null' >/dev/null 2>&1 <<< "$PRE_EVAL_ERR"; then
+      IS_EVAL_ERR=true
+    fi
+
+    if [ "$IS_EVAL_ERR" = "true" ] && [[ "$PRE_EVAL_ERR" == *"$EXPECTED_ERROR"* ]]; then
       DETECTED=true
       PRECISE=true
     fi
-
     if [ "$NO_FINDINGS" = "false" ]; then
       FINDINGS_TEXT="$PRE_EVAL_ERR"
     fi
@@ -402,7 +429,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
 
   if [ "${PRE_EVAL_FAILED:-false}" = "true" ]; then
     REPAIRED=false
-    VERDICT_REASON="pre_eval_failed"
+    VERDICT_REASON="${PRE_EVAL_FAIL_REASON:-pre_eval_failed}"
   elif [ "$ADAPTER_STATUS" = "completed" ]; then
     if [ "${EMPTY_EXPECTED_GUARD:-false}" = "true" ]; then
       REPAIRED=false
@@ -426,13 +453,16 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
         VERDICT="$(jq -r '.verdict // "FAIL"' <<< "$COMPARE_OUT")"
         MATCH="$(jq -r '.match // false' <<< "$COMPARE_OUT")"
         CLEAN="$(jq -r '.cleanReanalysis // false' <<< "$COMPARE_OUT")"
+        COMPARE_REASON="$(jq -r '.reason // empty' <<< "$COMPARE_OUT")"
 
         if [ "$VERDICT" = "PASS" ]; then
           REPAIRED=true
           VERDICT_REASON="match_and_clean"
         else
           REPAIRED=false
-          if [ "$MATCH" = "false" ] && [ "$CLEAN" = "true" ]; then
+          if [ -n "$COMPARE_REASON" ]; then
+            VERDICT_REASON="$COMPARE_REASON"
+          elif [ "$MATCH" = "false" ] && [ "$CLEAN" = "true" ]; then
             VERDICT_REASON="golden_mismatch"
           elif [ "$MATCH" = "true" ] && [ "$CLEAN" = "false" ]; then
             VERDICT_REASON="unclean_reanalysis"

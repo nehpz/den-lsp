@@ -56,7 +56,7 @@ if [ -z "$REPAIRED_DIR" ] || [ -z "$GOLDEN_DIR" ]; then
   exit 1
 fi
 
-EVAL_SCRIPT="${SCRIPT_DIR}/eval-workspace.bash"
+EVAL_SCRIPT="${EVAL_WORKSPACE_SCRIPT:-${SCRIPT_DIR}/eval-workspace.bash}"
 
 emit_fail_json() {
   local reason="$1"
@@ -76,8 +76,25 @@ REPAIRED_RAW="$("${EVAL_SCRIPT}" "${REPAIRED_DIR}" 2>/dev/null)"
 REPAIRED_EC=$?
 set -e
 
-if [ "${REPAIRED_EC}" -ne 0 ] || [ -z "${REPAIRED_RAW}" ]; then
-  emit_fail_json "Repaired workspace failed evaluation"
+IS_REPAIRED_ERR=false
+if [ "${REPAIRED_EC}" -eq 0 ] && [ -n "${REPAIRED_RAW}" ] && jq -e . >/dev/null 2>&1 <<< "${REPAIRED_RAW}"; then
+  if jq -e '.error != null' >/dev/null 2>&1 <<< "${REPAIRED_RAW}"; then
+    IS_REPAIRED_ERR=true
+  fi
+fi
+
+if [ "${REPAIRED_EC}" -ne 0 ] || [ -z "${REPAIRED_RAW}" ] || [ "${IS_REPAIRED_ERR}" = "true" ]; then
+  if [ "${IS_REPAIRED_ERR}" = "true" ]; then
+    ERR_KIND="$(jq -r '.error.kind // "eval-error"' <<< "${REPAIRED_RAW}")"
+    ERR_MSG="$(jq -r '.error.message // ""' <<< "${REPAIRED_RAW}")"
+    if [ -n "$ERR_MSG" ]; then
+      emit_fail_json "eval_error: ${ERR_KIND}: ${ERR_MSG}"
+    else
+      emit_fail_json "eval_error: ${ERR_KIND}"
+    fi
+  else
+    emit_fail_json "Repaired workspace failed evaluation"
+  fi
 fi
 
 # Step 2: Evaluate Golden Workspace
@@ -86,8 +103,25 @@ GOLDEN_RAW="$("${EVAL_SCRIPT}" "${GOLDEN_DIR}" 2>/dev/null)"
 GOLDEN_EC=$?
 set -e
 
-if [ "${GOLDEN_EC}" -ne 0 ] || [ -z "${GOLDEN_RAW}" ]; then
-  emit_fail_json "Golden workspace failed evaluation"
+IS_GOLDEN_ERR=false
+if [ "${GOLDEN_EC}" -eq 0 ] && [ -n "${GOLDEN_RAW}" ] && jq -e . >/dev/null 2>&1 <<< "${GOLDEN_RAW}"; then
+  if jq -e '.error != null' >/dev/null 2>&1 <<< "${GOLDEN_RAW}"; then
+    IS_GOLDEN_ERR=true
+  fi
+fi
+
+if [ "${GOLDEN_EC}" -ne 0 ] || [ -z "${GOLDEN_RAW}" ] || [ "${IS_GOLDEN_ERR}" = "true" ]; then
+  if [ "${IS_GOLDEN_ERR}" = "true" ]; then
+    ERR_KIND="$(jq -r '.error.kind // "eval-error"' <<< "${GOLDEN_RAW}")"
+    ERR_MSG="$(jq -r '.error.message // ""' <<< "${GOLDEN_RAW}")"
+    if [ -n "$ERR_MSG" ]; then
+      emit_fail_json "eval_error: ${ERR_KIND}: ${ERR_MSG}"
+    else
+      emit_fail_json "eval_error: ${ERR_KIND}"
+    fi
+  else
+    emit_fail_json "Golden workspace failed evaluation"
+  fi
 fi
 # Step 3: Normalization (KTD6)
 NORM_JQ='

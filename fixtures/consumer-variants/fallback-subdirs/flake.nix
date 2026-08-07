@@ -6,5 +6,13 @@
     den.url = "github:denful/den";
   };
 
-  outputs = inputs: { };
+  outputs =
+    inputs:
+    (inputs.nixpkgs.lib.evalModules {
+      modules = [
+        inputs.den.flakeModules.default
+        ./modules/sub/host.nix
+      ];
+      specialArgs = { inherit inputs; };
+    }).config.flake;
 }

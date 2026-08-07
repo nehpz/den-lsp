@@ -124,7 +124,9 @@ format_capped_stderr() {
 }
 
 WORKSPACE_NIX="$(printf '%s' "$WORKSPACE" | jq -Rs .)"
-NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = ${DEN_LSP_FLAKE}; }"
+EPHEMERAL_NIX_JSON="$(printf '%s' "$EPHEMERAL_NIX" | jq -Rs .)"
+DEN_LSP_FLAKE_JSON="$(printf '%s' "$DEN_LSP_FLAKE" | jq -Rs .)"
+NIX_EXPR="import (/. + ${EPHEMERAL_NIX_JSON}) { workspace = ${WORKSPACE_NIX}; den-lsp = (/. + ${DEN_LSP_FLAKE_JSON}); }"
 
 set +e
 # ${NIX_ARGS+...}: empty-array expansion under `set -u` errors on bash < 4.4 (macOS system bash).

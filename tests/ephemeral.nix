@@ -13,8 +13,8 @@ let
   inputOverrides = {
     den = denLspFlake.inputs.den;
     nixpkgs = denLspFlake.inputs.nixpkgs;
+    den-lsp = denLspFlake;
   };
-
   consumerPath = ./. + "/../fixtures/consumer";
   uninstrumentedPath = ./. + "/../fixtures/consumer-variants/uninstrumented";
   gatingDupPath = ./. + "/../fixtures/consumer-variants/gating-dup";
@@ -30,6 +30,8 @@ let
   specialArgsPath = ./. + "/../fixtures/consumer-variants/special-args";
   moduleArgsPath = ./. + "/../fixtures/consumer-variants/module-args";
   unrecognizedFlakePartsPath = ./. + "/../fixtures/consumer-variants/unrecognized-flake-parts";
+  unrelatedEvalModulesPath = ./. + "/../fixtures/consumer-variants/unrelated-eval-modules";
+  transformedInputsPath = ./. + "/../fixtures/consumer-variants/transformed-inputs";
 
   # Helper to normalize findings for comparison
   normalizeDoc = doc: {
@@ -107,6 +109,13 @@ let
     (unrecognizedFlakePartsRes ? error)
     && (unrecognizedFlakePartsRes.error.kind == "unsupported")
     && (unrecognizedFlakePartsRes.version == 1);
+  # Scenario 15: Unrelated evalModules call in target flake does not get injected with noflakeModule.
+  unrelatedEvalModulesDoc = ephemeral { workspace = unrelatedEvalModulesPath; den-lsp = denLspArg; inherit inputOverrides; };
+  unrelatedEvalModulesAnalyzed = (unrelatedEvalModulesDoc ? version) && (unrelatedEvalModulesDoc.version == 1) && (unrelatedEvalModulesDoc.summary.gating == 0);
+
+  # Scenario 16: Target flake transforming inputs passed to mkFlake preserves caller transformations.
+  transformedInputsDoc = ephemeral { workspace = transformedInputsPath; den-lsp = denLspArg; inherit inputOverrides; };
+  transformedInputsAnalyzed = (transformedInputsDoc ? version) && (transformedInputsDoc.version == 1) && (transformedInputsDoc.summary.gating == 0);
 in
 {
   ephemeral-uninstrumented-base-identical = uninstrumentedBaseIdentical;
@@ -123,4 +132,6 @@ in
   ephemeral-special-args = specialArgsAnalyzed;
   ephemeral-module-args = moduleArgsAnalyzed;
   ephemeral-unrecognized-flake-parts = unsupportedUnrecognizedFlakeParts;
+  ephemeral-unrelated-eval-modules = unrelatedEvalModulesAnalyzed;
+  ephemeral-transformed-inputs = transformedInputsAnalyzed;
 }

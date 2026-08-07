@@ -159,6 +159,32 @@ if grep -q "Column: 5" <<< "$TEST6_TEXT" && \
 else
   log_fail "Runner presentation: includes fix/docRef/column and gracefully omits position when null" "Presentation text mismatch: $TEST6_TEXT"
 fi
+# Test 7: Envelope payload (.error != null with exit 0) classified as eval failure, not miss
+MOCK_EVAL="${TMP_DIR}/mock-eval.bash"
+cat << 'EOF' > "${MOCK_EVAL}"
+#!/usr/bin/env bash
+echo '{"version":1,"error":{"kind":"unsupported","message":"Target flake fallback module discovery found no modules in modules/ or trigger.nix."}}'
+exit 0
+EOF
+chmod +x "${MOCK_EVAL}"
+
+TEST7_OUT="${TMP_DIR}/test7_metrics.jsonl"
+EC7=0
+set +e
+EVAL_WORKSPACE_SCRIPT="${MOCK_EVAL}" STUB_MODE=golden "${RUN_BASH}" --adapter stub --scenario base-gating-dup --out "${TEST7_OUT}" >/dev/null 2>&1
+EC7=$?
+set -e
+
+if [ $EC7 -eq 0 ] && [ -f "${TEST7_OUT}" ] && check_schema "${TEST7_OUT}" && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .detected' "${TEST7_OUT}")" = "false" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .precise' "${TEST7_OUT}")" = "false" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .repaired' "${TEST7_OUT}")" = "false" ] && \
+   [ "$(jq -r 'select(.sweepMeta != true) | .verdictReason' "${TEST7_OUT}")" = "eval_error: unsupported: Target flake fallback module discovery found no modules in modules/ or trigger.nix." ]; then
+  log_pass "Envelope payload (.error != null) -> classified as eval failure, not engine miss"
+else
+  log_fail "Envelope payload (.error != null) -> classified as eval failure, not engine miss" "Exit code $EC7 or metrics mismatch: $(cat "${TEST7_OUT}" 2>/dev/null)"
+fi
+
 
 echo "Summary: ${PASSED_TESTS} passed, ${FAILED_TESTS} failed."
 
