@@ -51,6 +51,8 @@ Every real-world breakage (engine crash, wrong finding, hang, timeout) encounter
 3. **Wrong Findings & Repair Scenarios:** Real-world defect repairs that require agent action become benchmark scenarios in `fixtures/scenarios/<name>/`.
 4. **Goldenability Rules:** Goldenable repairs follow the existing authoring rules — every agent-chosen free variable (names of created or renamed entities, repair shape, edit scope) must be pinned in `task`. Inherently ambiguous cases where free variables cannot be pinned without trivializing the task are recorded with `goldenable = false` + `exclusionReason` rather than bending the judgment.
 
+> Comparability note: the adapter findings presentation gained `fix`, `docRef`, and column on 2026-08-07. Repair-rate and repair-time numbers from sweeps before that boundary are not comparable with later ones; the readout's provenance section records each sweep's den-lsp revision, which delimits the boundary.
+
 ## Consumption Tiers
 - **Hermetic Tier** (`nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"`): Evaluates scenario manifests, verifies workspace evaluation/error status against expected specs, and validates golden structure.
 - **Heavy Tier** (manual; excluded from the default gate for cost): `nix build "path:fixtures/scenarios#heavyChecks.<system>.scenario-field-fleet-scale" --override-input den-lsp "$PWD"`. Run before releases or when touching capture/normalization paths - `nix flake check` only warns about the non-standard `heavyChecks` output and never builds it.
