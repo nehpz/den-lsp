@@ -11,13 +11,11 @@ pub const EVAL_TIMEOUT: Duration = Duration::from_secs(60);
 
 use crate::inventory::AnalysisDocument;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum EvalOutput {
     Success(AnalysisDocument),
     VersionMismatchOrInvalidJson(String),
     Error {
-        raw_stderr: String,
         error_block: String,
         position: Option<(String, u32)>,
     },
@@ -154,15 +152,10 @@ pub fn parse_nix_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
     (error_block, position)
 }
 
-#[allow(dead_code)]
 pub struct EvalOrchestrator {
-    evaluator: Arc<dyn NixEvaluator>,
-    workspace_root: PathBuf,
-    cached_system: Arc<RwLock<Option<String>>>,
     last_known_good: Arc<RwLock<Option<AnalysisDocument>>>,
     trigger_tx: mpsc::Sender<()>,
     pub generation: Arc<AtomicU64>,
-    eval_timeout: Duration,
 }
 
 impl EvalOrchestrator {
@@ -186,14 +179,13 @@ impl EvalOrchestrator {
     where
         F: Fn(EvalOutput) + Send + Sync + 'static,
     {
-        let cached_system = Arc::new(RwLock::new(None));
         let last_known_good = Arc::new(RwLock::new(None));
         let generation = Arc::new(AtomicU64::new(0));
         let (trigger_tx, mut trigger_rx) = mpsc::channel::<()>(100);
 
-        let evaluator_clone = evaluator.clone();
-        let workspace_root_clone = workspace_root.clone();
-        let cached_system_clone = cached_system.clone();
+        let evaluator_clone = evaluator;
+        let workspace_root_clone = workspace_root;
+        let cached_system_clone: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
         let last_known_good_clone = last_known_good.clone();
         let generation_clone = generation.clone();
 
@@ -237,12 +229,11 @@ impl EvalOrchestrator {
                                 Ok(Err(e)) => {
                                     if generation.load(Ordering::SeqCst) == current_gen {
                                         let (error_block, position) = if e.contains("timed out") {
-                                            (e.clone(), None)
+                                            (e, None)
                                         } else {
                                             (format!("Failed to detect system: {}", e), None)
                                         };
                                         on_eval_complete(EvalOutput::Error {
-                                            raw_stderr: e,
                                             error_block,
                                             position,
                                         });
@@ -256,7 +247,6 @@ impl EvalOrchestrator {
                                             eval_timeout.as_secs()
                                         );
                                         on_eval_complete(EvalOutput::Error {
-                                            raw_stderr: err_msg.clone(),
                                             error_block: err_msg,
                                             position: None,
                                         });
@@ -303,12 +293,11 @@ impl EvalOrchestrator {
                         }
                         Ok(Err(stderr)) => {
                             let (error_block, position) = if stderr.contains("timed out") {
-                                (stderr.clone(), None)
+                                (stderr, None)
                             } else {
                                 parse_nix_stderr(&stderr)
                             };
                             on_eval_complete(EvalOutput::Error {
-                                raw_stderr: stderr,
                                 error_block,
                                 position,
                             });
@@ -319,7 +308,6 @@ impl EvalOrchestrator {
                                 eval_timeout.as_secs()
                             );
                             on_eval_complete(EvalOutput::Error {
-                                raw_stderr: err_msg.clone(),
                                 error_block: err_msg,
                                 position: None,
                             });
@@ -330,13 +318,9 @@ impl EvalOrchestrator {
         });
 
         Self {
-            evaluator,
-            workspace_root,
-            cached_system,
             last_known_good,
             trigger_tx,
             generation,
-            eval_timeout,
         }
     }
 
@@ -376,6 +360,7 @@ mod tests {
         pub eval_analysis_delay: Option<Duration>,
         pub json_response: String,
         pub fail_stderr: Option<String>,
+        pub hold_eval: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl NixEvaluator for MockEvaluator {
@@ -406,6 +391,7 @@ mod tests {
             let fail = self.fail_stderr.clone();
             let delay = self.eval_analysis_delay;
             let drop_count = self.drop_count.clone();
+            let hold = self.hold_eval.clone();
 
             async move {
                 let mut guard = DropGuard {
@@ -413,6 +399,9 @@ mod tests {
                     disarmed: false,
                 };
                 count.fetch_add(1, Ordering::SeqCst);
+                if let Some(gate) = hold {
+                    gate.notified().await;
+                }
                 if let Some(d) = delay {
                     sleep(d).await;
                 }
@@ -444,6 +433,7 @@ mod tests {
             eval_analysis_delay: None,
             json_response: serde_json::to_string(&mock_doc).unwrap(),
             fail_stderr: None,
+            hold_eval: None,
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);
@@ -475,6 +465,7 @@ mod tests {
             eval_analysis_delay: None,
             json_response: invalid_ver_json,
             fail_stderr: None,
+            hold_eval: None,
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);
@@ -518,6 +509,7 @@ mod tests {
             eval_analysis_delay: Some(Duration::from_millis(500)),
             json_response: "{}".to_string(),
             fail_stderr: None,
+            hold_eval: None,
         });
         let (res_tx, mut res_rx) = mpsc::channel(10);
         let orchestrator = EvalOrchestrator::new_with_timeout(
@@ -556,6 +548,7 @@ mod tests {
             eval_analysis_delay: None,
             json_response: "{}".to_string(),
             fail_stderr: None,
+            hold_eval: None,
         });
         let (res_tx, mut res_rx) = mpsc::channel(10);
         let orchestrator = EvalOrchestrator::new_with_timeout(
@@ -601,6 +594,7 @@ mod tests {
             eval_analysis_delay: Some(Duration::from_millis(500)),
             json_response: serde_json::to_string(&mock_doc).unwrap(),
             fail_stderr: None,
+            hold_eval: None,
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);
@@ -634,6 +628,7 @@ mod tests {
     async fn test_stale_result_completing_after_newer_trigger_discarded() {
         let spawn_count = Arc::new(AtomicUsize::new(0));
         let drop_count = Arc::new(AtomicUsize::new(0));
+        let hold = Arc::new(tokio::sync::Notify::new());
 
         let mock_doc = AnalysisDocument {
             version: 1,
@@ -645,9 +640,10 @@ mod tests {
             spawn_count: spawn_count.clone(),
             drop_count,
             detect_system_delay: None,
-            eval_analysis_delay: Some(Duration::from_millis(50)),
+            eval_analysis_delay: None,
             json_response: serde_json::to_string(&mock_doc).unwrap(),
             fail_stderr: None,
+            hold_eval: Some(hold.clone()),
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);
@@ -661,13 +657,19 @@ mod tests {
         );
 
         orchestrator.trigger_eval();
-        sleep(Duration::from_millis(350)).await; // Gen 1 starts executing
+        // Wait until the gen-1 evaluation has actually started (held at the gate).
+        while spawn_count.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(10)).await;
+        }
 
-        // Manually increment generation to simulate a newer trigger coming in
+        // A newer trigger supersedes gen 1 while its evaluation is still in flight.
         orchestrator.generation.fetch_add(1, Ordering::SeqCst);
 
-        // Wait to see if gen 1 publishes its result
-        let res = tokio::time::timeout(Duration::from_millis(150), res_rx.recv()).await;
+        // Release the held evaluation so it completes only after being superseded.
+        hold.notify_one();
+
+        // The stale completion must never publish.
+        let res = tokio::time::timeout(Duration::from_millis(300), res_rx.recv()).await;
         assert!(
             res.is_err(),
             "Stale result must be discarded and not received by on_eval_complete"
@@ -691,6 +693,7 @@ mod tests {
             eval_analysis_delay: None,
             json_response: serde_json::to_string(&mock_doc).unwrap(),
             fail_stderr: None,
+            hold_eval: None,
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);

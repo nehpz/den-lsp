@@ -146,18 +146,8 @@ TEST6_PRE_JSON='{
   ]
 }'
 
-TEST6_TEXT="$(jq -r '
-  .findings // [] | map(
-    "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
-    (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
-    (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
-    (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
-    (if .position and .position.column then "\n  Column: \(.position.column)" else "" end) +
-    (if .message then "\n  Message: \(.message)" else "" end) +
-    (if .fix then "\n  Fix: \(.fix)" else "" end) +
-    (if .docRef then "\n  DocRef: \(.docRef)" else "" end)
-  ) | join("\n\n")
-' <<< "$TEST6_PRE_JSON")"
+# Exercise the production formatter, not a copy of it.
+TEST6_TEXT="$(jq -r -f "${SCRIPT_DIR}/findings-format.jq" <<< "$TEST6_PRE_JSON")"
 
 if grep -q "Column: 5" <<< "$TEST6_TEXT" && \
    grep -q "Fix: Consolidate openssh config" <<< "$TEST6_TEXT" && \

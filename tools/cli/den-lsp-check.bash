@@ -53,6 +53,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --)
       shift
+      # Everything after -- is positional; still enforce the one-workspace contract.
+      for arg in "$@"; do
+        if [[ -n "${POS_WORKSPACE}" ]]; then
+          echo "error: unexpected extra argument '$arg'" >&2
+          exit 64
+        fi
+        POS_WORKSPACE="$arg"
+      done
       break
       ;;
     -*)
@@ -105,6 +113,7 @@ trap 'rm -f "$NIX_STDOUT" "$NIX_STDERR"' EXIT
 NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = \"${WORKSPACE}\"; den-lsp = ${DEN_LSP_FLAKE}; }"
 
 set +e
+# ${NIX_ARGS+...}: empty-array expansion under `set -u` errors on bash < 4.4 (macOS system bash).
 timeout "${TIMEOUT}s" nix eval --impure --json ${NIX_ARGS+"${NIX_ARGS[@]}"} --expr "$NIX_EXPR" >"$NIX_STDOUT" 2>"$NIX_STDERR"
 EVAL_EXIT=$?
 set -e

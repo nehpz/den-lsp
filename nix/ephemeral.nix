@@ -1,15 +1,17 @@
-# Ephemeral injection wrapper for den-lsp (R1, R2, R3).
+# Ephemeral injection wrapper for den-lsp.
 #
 # Analyzes any stock Den consumer flake (den >= 0.18.0) at invocation time
 # without requiring a committed den-lsp flake input or repo configuration.
 #
-# Evaluation flow (plan KTD2):
-#   1. Already-instrumented target: if target exposes `den-lsp-analysis` output,
-#      use it directly (R2: zero double injection, identical results).
-#   2. Den flake without den-lsp: reconstruct evaluation with `nix/inject-analysis.nix`
-#      injected into the target's module graph (covers flake-parts and evalModules).
-#   3. Non-Den target: return an explicit versioned error envelope `{ version, error = { kind = "unsupported", message } }`
-#      distinct from a Den evaluation failure (R3).
+# Evaluation flow:
+#   1. Already-instrumented target: if the target exposes a `den-lsp-analysis`
+#      output, use it directly (zero double injection, identical results).
+#   2. Den flake without den-lsp: reconstruct evaluation with
+#      `nix/inject-analysis.nix` injected into the target's module graph
+#      (covers flake-parts and plain evalModules consumers).
+#   3. Non-Den target: return an explicit versioned error envelope
+#      `{ version, error = { kind = "unsupported", message } }`, distinct
+#      from a Den evaluation failure.
 #
 # Target workspace paths handle dirty working trees via `path:` refs.
 
