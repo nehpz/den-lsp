@@ -34,6 +34,14 @@ Validation rules enforced by `validateScenario` (`fixtures/scenarios/lib.nix`):
 - `heavy`: Marks scale or long-running tests. Excluded from default checks (`--set clear-cut`).
 - `goldenable`: Dictates diff comparison against `golden/`. Requires `exclusionReason` when `false`.
 
+## Authoring Rules for Goldenable Scenarios
+
+The evidence runner judges a repair by structural equality of the normalized evaluated outcome against `golden/` — agent-chosen identifiers (aspect names, quirk keys) are part of that comparison. Two rules keep the judgment measuring repair correctness rather than naming taste (see `docs/solutions/test-failures/golden-mismatch-unpinned-free-variables.md`):
+
+1. **Pin every agent-chosen free variable in `task`.** If the correct repair creates or renames a named entity, the prompt must state the exact name (e.g. "into a shared aspect named 'shared-openssh'"); if the repair shape is open (empty body vs. empty class bucket), the prompt must pin it and bound the edit scope ("change only X, nothing else"). A scenario whose free variables cannot be pinned without trivializing the task is not goldenable — set `goldenable = false` with an `exclusionReason` instead of bending the judgment.
+   A free variable is a choice with no semantic consequence for the evaluated outcome — naming, formatting, incidental shape. Choices the configuration semantics constrain (e.g. *where* a shared aspect attaches: to the duplicating aspects' `includes`, not the host's) are deliberately left unpinned — getting them wrong changes behavior for consumers of those aspects, and the comparator failing such a repair is the harness measuring real capability, not a missing pin.
+2. **Goldens contain only what the task requests.** No incidental edits (descriptions, formatting, refactors) beyond the pinned repair — any unprompted delta becomes a false-negative `golden_mismatch` for a correct agent.
+
 ## Consumption Tiers
 - **Hermetic Tier** (`nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"`): Evaluates scenario manifests, verifies workspace evaluation/error status against expected specs, and validates golden structure.
 - **Heavy Tier** (manual; excluded from the default gate for cost): `nix build "path:fixtures/scenarios#heavyChecks.<system>.scenario-field-fleet-scale" --override-input den-lsp "$PWD"`. Run before releases or when touching capture/normalization paths - `nix flake check` only warns about the non-standard `heavyChecks` output and never builds it.
