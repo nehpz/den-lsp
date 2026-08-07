@@ -286,15 +286,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
       fi
 
       if [ "$NO_FINDINGS" = "false" ] && [ -n "$PRE_EVAL_JSON" ]; then
-        FINDINGS_TEXT="$(jq -r '
-          .findings // [] | map(
-            "Finding:\n  Rule: \(.rule)\n  Severity: \(.severity)" +
-            (if .aspectPath then "\n  Aspect: \(.aspectPath)" else "" end) +
-            (if .position and .position.file then "\n  File: \(.position.file)" else "" end) +
-            (if .position and .position.line then "\n  Line: \(.position.line)" else "" end) +
-            (if .message then "\n  Message: \(.message)" else "" end)
-          ) | join("\n\n")
-        ' <<< "$PRE_EVAL_JSON")"
+        FINDINGS_TEXT="$(jq -r -f "${SCRIPT_DIR}/findings-format.jq" <<< "$PRE_EVAL_JSON")"
       fi
     fi
   elif [ "$KIND" = "eval-error" ]; then
