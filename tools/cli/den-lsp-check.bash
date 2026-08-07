@@ -15,7 +15,8 @@ set -euo pipefail
 #       --json: JSON document or error envelope verbatim on stdout.
 #       ALL diagnostics/human chatter to stderr.
 #       stdout in --json mode is ALWAYS exactly one valid JSON value.
-
+#
+# Note: DEN_LSP_CHECK_NIX_ARGS is a test/development seam that appends caller-controlled nix flags, not a hardened boundary.
 JSON_MODE=false
 MODE="gate"
 TIMEOUT=120
@@ -104,7 +105,23 @@ fi
 
 NIX_STDOUT="$(mktemp)"
 NIX_STDERR="$(mktemp)"
-trap 'rm -f "$NIX_STDOUT" "$NIX_STDERR"' EXIT
+NIX_STDERR_CAPPED="$(mktemp)"
+trap 'rm -f "$NIX_STDOUT" "$NIX_STDERR" "$NIX_STDERR_CAPPED"' EXIT
+
+format_capped_stderr() {
+  local src="$1"
+  local dst="$2"
+  local orig_lines orig_bytes
+  orig_lines=$(wc -l < "$src")
+  orig_bytes=$(wc -c < "$src")
+
+  if [ "$orig_lines" -gt 200 ] || [ "$orig_bytes" -gt 16384 ]; then
+    printf '[stderr output truncated to last 200 lines / 16KiB]\n' > "$dst"
+    tail -n 200 "$src" | tail -c 16384 >> "$dst"
+  else
+    cat "$src" > "$dst"
+  fi
+}
 
 WORKSPACE_NIX="$(printf '%s' "$WORKSPACE" | jq -Rs .)"
 NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = ${DEN_LSP_FLAKE}; }"
@@ -133,7 +150,8 @@ if [ "$EVAL_EXIT" -ne 0 ]; then
   fi
   cat "$NIX_STDERR" >&2
   if [ "$JSON_MODE" = true ]; then
-    jq -n --rawfile msg "$NIX_STDERR" '{"version":1,"error":{"kind":"eval-error","message":$msg}}'
+    format_capped_stderr "$NIX_STDERR" "$NIX_STDERR_CAPPED"
+    jq -n --rawfile msg "$NIX_STDERR_CAPPED" '{"version":1,"error":{"kind":"eval-error","message":$msg}}'
   else
     echo "den-lsp: error [eval-error]: evaluation failed" >&2
   fi

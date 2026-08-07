@@ -20,6 +20,7 @@ let
   workspace = if builtins.isAttrs args && (args ? workspace || args ? den-lsp) then args.workspace else args;
   den-lsp-default = if builtins.pathExists (./. + "/flake.nix") then ./. else ../.;
   den-lsp-arg = if builtins.isAttrs args && args ? den-lsp then args.den-lsp else den-lsp-default;
+  inputOverrides = if builtins.isAttrs args && args ? inputOverrides then args.inputOverrides else { };
 
   denLspFlake =
     if builtins.isAttrs den-lsp-arg && den-lsp-arg ? lib then
@@ -73,7 +74,7 @@ let
     else
       targetFlake.outputs.den-lsp-analysis;
 
-  hasDenInput = (targetFlake ? inputs) && (targetFlake.inputs ? den);
+  hasDenInput = (targetFlake ? inputs && targetFlake.inputs ? den) || (inputOverrides ? den);
 
   targetDir = if builtins.isPath workspace then workspace else targetFlake.outPath;
 
@@ -113,24 +114,9 @@ let
 
   wrapFlakePartsModule =
     module:
-    let
-      normalize = m: if builtins.isPath m then import m else m;
-      rawModule = normalize module;
-    in
-    arg:
-    let
-      evalMod = m:
-        let
-          norm = normalize m;
-        in
-        if builtins.isFunction norm then evalMod (norm arg)
-        else if builtins.isAttrs norm then norm
-        else { };
-      res = evalMod rawModule;
-    in
-    res
-    // {
-      imports = (res.imports or [ ]) ++ [
+    {
+      imports = [
+        module
         injectModule
         ({ config, lib, ... }: {
           config.flake.den-lsp-analysis = lib.mkDefault (core.analysisFor { inherit (config) den; });
@@ -145,12 +131,18 @@ let
       modules = (args.modules or [ ]) ++ [ noflakeModule ];
     };
 
-  augmentedInputs =
+  baseInputs =
     { self = { outPath = targetDir; } // (if builtins.isAttrs targetFlake then targetFlake else { }); }
     // (if targetFlake ? inputs then targetFlake.inputs else { })
-    // lib.optionalAttrs (targetFlake ? inputs && targetFlake.inputs ? flake-parts) {
-      flake-parts = targetFlake.inputs.flake-parts // {
-        lib = targetFlake.inputs.flake-parts.lib // {
+    // inputOverrides;
+
+  hasFlakePartsInput = baseInputs ? flake-parts;
+
+  augmentedInputs =
+    baseInputs
+    // lib.optionalAttrs hasFlakePartsInput {
+      flake-parts = baseInputs.flake-parts // {
+        lib = baseInputs.flake-parts.lib // {
           mkFlake =
             argsOrModule:
             let
@@ -162,8 +154,10 @@ let
                   || argsOrModule ? specialArgs
                   || argsOrModule ? moduleLocation
                 );
-              origMkFlake = targetFlake.inputs.flake-parts.lib.mkFlake;
-              cleanArgs = args: if args ? inputs then { inherit (args) inputs; } else { inputs = args; };
+              origMkFlake = baseInputs.flake-parts.lib.mkFlake;
+              cleanArgs = args: (if builtins.isAttrs args then args else { }) // {
+                inputs = augmentedInputs // (if builtins.isAttrs args && args ? self then { inherit (args) self; } else { });
+              };
             in
             if isArgs then
               module: origMkFlake (cleanArgs argsOrModule) (wrapFlakePartsModule module)
@@ -180,8 +174,10 @@ let
                   || argsOrModule ? specialArgs
                   || argsOrModule ? moduleLocation
                 );
-              origEval = targetFlake.inputs.flake-parts.lib.evalFlakeModule;
-              cleanArgs = args: if args ? inputs then { inherit (args) inputs; } else { inputs = args; };
+              origEval = baseInputs.flake-parts.lib.evalFlakeModule;
+              cleanArgs = args: (if builtins.isAttrs args then args else { }) // {
+                inputs = augmentedInputs // (if builtins.isAttrs args && args ? self then { inherit (args) self; } else { });
+              };
             in
             if isArgs then
               module: origEval (cleanArgs argsOrModule) (wrapFlakePartsModule module)
@@ -190,11 +186,11 @@ let
         };
       };
     }
-    // lib.optionalAttrs (targetFlake ? inputs && targetFlake.inputs ? nixpkgs) {
-      nixpkgs = targetFlake.inputs.nixpkgs // {
-        lib = targetFlake.inputs.nixpkgs.lib // {
+    // lib.optionalAttrs (baseInputs ? nixpkgs) {
+      nixpkgs = baseInputs.nixpkgs // {
+        lib = baseInputs.nixpkgs.lib // {
           evalModules =
-            args: targetFlake.inputs.nixpkgs.lib.evalModules (wrapEvalModulesArgs args);
+            args: baseInputs.nixpkgs.lib.evalModules (wrapEvalModulesArgs args);
         };
       };
     };
@@ -214,7 +210,7 @@ let
       null;
 
   fallbackAnalysis =
-    if hasDenInput && (targetFlake.inputs ? flake-parts) then
+    if hasDenInput && (!hasFlakePartsInput) then
       let
         discoveredModules = getModulesFromDir targetDir;
       in
@@ -223,26 +219,23 @@ let
       else
         let
           eval =
-            targetFlake.inputs.flake-parts.lib.evalFlakeModule
-              { inputs = targetFlake.inputs; }
-              {
-                systems = [
-                  "x86_64-linux"
-                  "aarch64-linux"
-                  "aarch64-darwin"
-                ];
-                imports = [
-                  targetFlake.inputs.den.flakeModules.default
-                  injectModule
-                ] ++ discoveredModules;
-              };
+            baseInputs.nixpkgs.lib.evalModules {
+              modules = [
+                baseInputs.den.flakeModules.default
+                noflakeModule
+              ] ++ discoveredModules;
+              specialArgs = { inputs = baseInputs; };
+            };
         in
         core.analysisFor { inherit (eval.config) den; }
     else
       null;
+
   finalAnalysis =
     if reconstructedAnalysis != null then
       reconstructedAnalysis
+    else if hasFlakePartsInput then
+      unsupportedError "Target flake declares a flake-parts input but exposes an unrecognized outputs shape."
     else if fallbackAnalysis != null then
       fallbackAnalysis
     else

@@ -3,8 +3,7 @@ _: {
     nixos =
       { pkgs, ... }:
       {
-        fileSystems."/".device = "/dev/null";
-        boot.loader.grub.enable = false;
+        environment.systemPackages = [ pkgs.hello ];
       };
   };
 }

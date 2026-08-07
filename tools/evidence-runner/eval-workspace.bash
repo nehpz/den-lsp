@@ -29,6 +29,8 @@ WORKSPACE_DIR="$(cd "$1" && pwd -P)"
 # specify github:denful/den/v0.18.0 (and nixpkgs original refs also differ), causing Nix to float unpinned inputs.
 LOCK_FILE="${REPO_DIR}/fixtures/scenarios/flake.lock"
 OVERRIDE_ARGS=()
+NIXPKGS_OVERRIDE=""
+DEN_OVERRIDE=""
 if [ -f "${LOCK_FILE}" ]; then
   OVERRIDE_ARGS+=(--reference-lock-file "${LOCK_FILE}")
 
@@ -42,11 +44,17 @@ if [ -f "${LOCK_FILE}" ]; then
   if [ -z "${DEN_DIR:-}" ]; then
     DEN_REV=$(jq -r '.nodes[.root].inputs.den as $n | .nodes[$n].locked | select(. != null) | .rev // empty' "${LOCK_FILE}" 2>/dev/null || true)
     if [ -n "${DEN_REV}" ]; then
-      OVERRIDE_ARGS+=(--override-input den "github:denful/den/${DEN_REV}")
+      DEN_OVERRIDE="github:denful/den/${DEN_REV}"
+      OVERRIDE_ARGS+=(--override-input den "${DEN_OVERRIDE}")
     fi
   fi
 fi
 if [ -n "${DEN_DIR:-}" ]; then
+  if [[ "${DEN_DIR}" == /* ]]; then
+    DEN_OVERRIDE="path:${DEN_DIR}"
+  else
+    DEN_OVERRIDE="${DEN_DIR}"
+  fi
   OVERRIDE_ARGS+=(--override-input den "${DEN_DIR}")
 fi
 OVERRIDE_ARGS+=(--override-input den-lsp "${REPO_DIR}")
@@ -61,6 +69,14 @@ if [ "$IS_INSTRUMENTED" = true ]; then
 else
   EPHEMERAL_NIX="${REPO_DIR}/nix/ephemeral.nix"
   WORKSPACE_NIX="$(printf '%s' "path:${WORKSPACE_DIR}" | jq -Rs .)"
-  NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = \"path:${REPO_DIR}\"; }"
+  INPUT_OVERRIDES_NIX="{ "
+  if [ -n "${NIXPKGS_OVERRIDE}" ]; then
+    INPUT_OVERRIDES_NIX+="nixpkgs = builtins.getFlake \"${NIXPKGS_OVERRIDE}\"; "
+  fi
+  if [ -n "${DEN_OVERRIDE}" ]; then
+    INPUT_OVERRIDES_NIX+="den = builtins.getFlake \"${DEN_OVERRIDE}\"; "
+  fi
+  INPUT_OVERRIDES_NIX+="}"
+  NIX_EXPR="import ${EPHEMERAL_NIX} { workspace = ${WORKSPACE_NIX}; den-lsp = \"path:${REPO_DIR}\"; inputOverrides = ${INPUT_OVERRIDES_NIX}; }"
   nix eval --impure --json "${OVERRIDE_ARGS[@]}" --expr "$NIX_EXPR" | sed -n '/^{/,$p'
 fi
