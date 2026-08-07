@@ -3,7 +3,7 @@
   den = {
     classes.custom = { };
     quirks.custom-quirk = {
-      description = "Non-colliding quirk name";
+      description = "Colliding quirk name";
     };
 
     aspects = {

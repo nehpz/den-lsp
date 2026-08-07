@@ -3,7 +3,7 @@
   name = "base-gating-dup";
   kind = "finding";
   defect = "Duplicated configuration block emitted across multiple aspects";
-  task = "Refactor duplicated configuration block across aspects into a shared aspect.";
+  task = "Refactor duplicated configuration block across aspects into a shared aspect named 'shared-openssh'.";
   expectedFindings = [
     {
       rule = "duplication";
