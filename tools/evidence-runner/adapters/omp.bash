@@ -75,6 +75,13 @@ set +e
 EXIT_CODE=$?
 set -e
 
+# Defense-in-depth: omp self-redacts OMP_AUTH_BROKER_TOKEN in its output, but
+# the transcript persists into the run artifacts, so scrub any leak anyway.
+if [ -n "${OMP_AUTH_BROKER_TOKEN:-}" ] && [ -f "$TRANSCRIPT_FILE" ] && grep -qF "$OMP_AUTH_BROKER_TOKEN" "$TRANSCRIPT_FILE" 2>/dev/null; then
+  TRANSCRIPT_TEXT="$(cat "$TRANSCRIPT_FILE")"
+  printf '%s\n' "${TRANSCRIPT_TEXT//"$OMP_AUTH_BROKER_TOKEN"/[REDACTED]}" > "$TRANSCRIPT_FILE"
+fi
+
 [ $EXIT_CODE -eq 0 ] || fail "omp exited with code $EXIT_CODE (transcript: $TRANSCRIPT_FILE)"
 
 # Turn count from --mode json output: one turn_end event per agent turn

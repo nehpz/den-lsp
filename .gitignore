@@ -2,5 +2,4 @@
 target/
 .direnv/
 /evidence-metrics.jsonl
-/evidence-metrics-artifacts/
-runs/**/*-artifacts/
+**/*-artifacts/
