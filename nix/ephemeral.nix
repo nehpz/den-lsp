@@ -30,14 +30,16 @@ let
   versionFromUrl =
     url:
     let
-      m = builtins.match ".*[/:]v([0-9]+\\.[0-9]+\\.[0-9]+).*" url;
+      m = builtins.match ".*[/:]v?([0-9]+\\.[0-9]+\\.[0-9]+).*" url;
     in
     if m == null then null else builtins.head m;
 
+  # Canonical hercules-ci path, or a repo-name segment (forks named
+  # flake-parts). No bare substring — "my-flake-parts-lib" must not match.
   isFlakePartsUrl =
     url:
     builtins.match ".*hercules-ci/flake-parts.*" url != null
-    || builtins.match ".*flake-parts.*" url != null;
+    || builtins.match ".*[/:]flake-parts([/#?].*)?" url != null;
 
   preflight =
     targetPath:
