@@ -50,7 +50,7 @@ Exit codes:
 |---|---|
 | 0 | Analysis completed, nothing blocking (clean, advisory-only, or `--draft`) |
 | 1 | Gating findings under `--gate` |
-| 2 | Analysis failure (eval error, not a Den flake, den < v0.18.0) |
+| 2 | Analysis failure (eval error, not a Den flake, den < v0.18.0). Exit-2 stderr carries stable `den-lsp:`-prefixed reason lines that scripts may match. |
 | 3 | Evaluation timed out |
 | 64 | Usage error |
 
