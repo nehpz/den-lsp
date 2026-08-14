@@ -61,6 +61,8 @@
         version = "0.1.0";
         src = ../server;
         cargoLock.lockFile = ../server/Cargo.lock;
+        # KTD8: bake the ephemeral shim location (this directory) into the binary.
+        env.DEN_LSP_SHIM_PATH = "${./.}";
         meta.mainProgram = "den-lsp-server";
       };
 

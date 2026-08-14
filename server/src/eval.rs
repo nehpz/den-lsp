@@ -37,6 +37,59 @@ pub trait NixEvaluator: Send + Sync + 'static {
     ) -> futures_util::future::BoxFuture<'static, Result<String, String>>;
 }
 
+fn is_missing_attribute(stderr: &str) -> bool {
+    stderr.contains("does not provide attribute")
+        || stderr.contains("attribute 'den-lsp-analysis' missing")
+}
+
+/// Location of the KTD1a shim flake (`nix/` in the den-lsp tree).
+///
+/// Resolution order:
+/// 1. `DEN_LSP_SHIM_PATH` baked in at compile time (`option_env!`) — set by the
+///    Nix package derivation so editor installs are self-contained (KTD8).
+/// 2. Dev fallback: `CARGO_MANIFEST_DIR/../nix` so `cargo test` / `cargo run`
+///    from a source checkout work without a Nix-wrapped build.
+fn den_lsp_shim_path() -> PathBuf {
+    let raw = if let Some(p) = option_env!("DEN_LSP_SHIM_PATH") {
+        PathBuf::from(p)
+    } else {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("nix")
+    };
+    raw.canonicalize().unwrap_or(raw)
+}
+
+async fn nix_eval_json(args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new("nix");
+    cmd.args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run nix eval analysis: {}", e))?;
+
+    let output = match tokio::time::timeout(EVAL_TIMEOUT, child.wait_with_output()).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(format!("Failed to run nix eval analysis: {}", e)),
+        Err(_) => {
+            return Err(format!(
+                "{}nix eval timed out after {}s",
+                TIMEOUT_SENTINEL,
+                EVAL_TIMEOUT.as_secs()
+            ))
+        }
+    };
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
+
 pub struct CommandNixEvaluator;
 
 impl NixEvaluator for CommandNixEvaluator {
@@ -84,10 +137,13 @@ impl NixEvaluator for CommandNixEvaluator {
         system: String,
     ) -> futures_util::future::BoxFuture<'static, Result<String, String>> {
         Box::pin(async move {
-            // Prefer the system-independent document (pure eval; exists even
-            // when the editing machine's system declares no hosts), fall back
-            // to the per-system gate's passthru for older den-lsp modules.
-            let targets = [
+            // Target resolution (KTD5), each step only after missing-attribute:
+            // 1. path:<ws>#den-lsp-analysis (committed flake output)
+            // 2. path:<ws>#checks.<system>.den-lsp.passthru.analysis (older module)
+            // 3. ephemeral injection: same attr as (1) with
+            //    --override-input flake-parts <shim> --no-write-lock-file
+            //    where <shim> is den-lsp's nix/ directory (see den_lsp_shim_path).
+            let committed = [
                 format!("path:{}#den-lsp-analysis", workspace_root.display()),
                 format!(
                     "path:{}#checks.{}.den-lsp.passthru.analysis",
@@ -97,45 +153,39 @@ impl NixEvaluator for CommandNixEvaluator {
             ];
 
             let mut last_err = String::new();
-            for (idx, expr) in targets.iter().enumerate() {
-                let mut cmd = Command::new("nix");
-                cmd.args(["eval", "--json", expr])
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped())
-                    .kill_on_drop(true);
-
-                let child = cmd
-                    .spawn()
-                    .map_err(|e| format!("Failed to run nix eval analysis: {}", e))?;
-
-                let output =
-                    match tokio::time::timeout(EVAL_TIMEOUT, child.wait_with_output()).await {
-                        Ok(Ok(out)) => out,
-                        Ok(Err(e)) => return Err(format!("Failed to run nix eval analysis: {}", e)),
-                        Err(_) => {
-                            return Err(format!(
-                                "{}nix eval timed out after {}s",
-                                TIMEOUT_SENTINEL,
-                                EVAL_TIMEOUT.as_secs()
-                            ))
+            let mut missing_committed = 0usize;
+            for expr in &committed {
+                match nix_eval_json(&["eval", "--json", expr]).await {
+                    Ok(stdout) => return Ok(stdout),
+                    Err(err) => {
+                        last_err = err;
+                        if is_missing_attribute(&last_err) {
+                            missing_committed += 1;
+                        } else {
+                            // Real evaluation failure must surface as the R13
+                            // diagnostic, not be retried against another target.
+                            return Err(last_err);
                         }
-                    };
-
-                if output.status.success() {
-                    return Ok(String::from_utf8_lossy(&output.stdout).to_string());
-                }
-
-                last_err = String::from_utf8_lossy(&output.stderr).to_string();
-                // Only fall through when the attribute is missing (older
-                // den-lsp module without the flake-level output); a real
-                // evaluation failure must surface as the R13 diagnostic,
-                // not be retried against a second target.
-                let missing_attr = last_err.contains("does not provide attribute")
-                    || last_err.contains("attribute 'den-lsp-analysis' missing");
-                if idx == 0 && !missing_attr {
-                    break;
+                    }
                 }
             }
+
+            if missing_committed == committed.len() {
+                let shim = den_lsp_shim_path();
+                let expr = format!("path:{}#den-lsp-analysis", workspace_root.display());
+                let shim_arg = shim.display().to_string();
+                return nix_eval_json(&[
+                    "eval",
+                    "--json",
+                    &expr,
+                    "--override-input",
+                    "flake-parts",
+                    &shim_arg,
+                    "--no-write-lock-file",
+                ])
+                .await;
+            }
+
             Err(last_err)
         })
     }
@@ -382,9 +432,10 @@ async fn publish_eval_result<F>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inventory::Inventory;
+    use crate::inventory::{Finding, Inventory};
     use futures_util::future::{BoxFuture, FutureExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Mutex, MutexGuard};
 
     pub struct DropGuard {
         pub counter: Arc<AtomicUsize>,
@@ -834,5 +885,340 @@ mod tests {
             panic!("Expected EvalOutput::Success");
         }
         assert_eq!(spawn_count.load(Ordering::SeqCst), 1);
+    }
+
+    // --- CommandNixEvaluator target-fallback (KTD5) ---
+    // Production shells out to `nix`; these tests put a stub `nix` first on
+    // PATH (serialized by NIX_STUB_LOCK) and record argv, mirroring the
+    // existing MockEvaluator style at the process boundary.
+
+    static NIX_STUB_LOCK: Mutex<()> = Mutex::new(());
+    static NIX_STUB_SEQ: AtomicUsize = AtomicUsize::new(0);
+
+    const NIX_STUB_SCRIPT: &str = r#"#!/usr/bin/env bash
+set -euo pipefail
+echo "$@" >> "${DEN_LSP_NIX_STUB_LOG}"
+
+has_override=0
+has_analysis=0
+has_passthru=0
+has_current_system=0
+for arg in "$@"; do
+  case "$arg" in
+    --override-input) has_override=1 ;;
+    *#den-lsp-analysis) has_analysis=1 ;;
+    *#checks.*) has_passthru=1 ;;
+    builtins.currentSystem) has_current_system=1 ;;
+  esac
+done
+
+if [[ $has_current_system -eq 1 ]]; then
+  printf '%s' "${DEN_LSP_NIX_STUB_SYSTEM:-aarch64-darwin}"
+  exit 0
+fi
+
+if [[ $has_override -eq 1 ]]; then
+  case "${DEN_LSP_NIX_STUB_INJECTION:-ok}" in
+    ok)
+      printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
+      exit 0
+      ;;
+    *)
+      echo "${DEN_LSP_NIX_STUB_INJECTION_STDERR:-error: den-lsp: no flake-parts input (this wrapper analyzes flake-parts Den consumers)}" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ $has_passthru -eq 1 ]]; then
+  case "${DEN_LSP_NIX_STUB_PASSTHRU:-missing}" in
+    ok)
+      printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
+      exit 0
+      ;;
+    missing)
+      echo "error: flake 'path:/ws' does not provide attribute 'checks.aarch64-darwin.den-lsp.passthru.analysis'" >&2
+      exit 1
+      ;;
+    *)
+      echo "${DEN_LSP_NIX_STUB_PASSTHRU_STDERR:-error: undefined variable 'boom'}" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ $has_analysis -eq 1 ]]; then
+  case "${DEN_LSP_NIX_STUB_ANALYSIS:-missing}" in
+    ok)
+      printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
+      exit 0
+      ;;
+    missing)
+      echo "error: flake 'path:/ws' does not provide attribute 'packages.aarch64-darwin.den-lsp-analysis', 'legacyPackages.aarch64-darwin.den-lsp-analysis' or 'den-lsp-analysis'" >&2
+      exit 1
+      ;;
+    *)
+      echo "${DEN_LSP_NIX_STUB_ANALYSIS_STDERR:-error: undefined variable 'boom'}" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+echo "error: unexpected nix stub invocation: $*" >&2
+exit 1
+"#;
+
+    struct NixStubEnv {
+        _lock: MutexGuard<'static, ()>,
+        log_path: PathBuf,
+        stub_dir: PathBuf,
+        prev_path: String,
+    }
+
+    impl Drop for NixStubEnv {
+        fn drop(&mut self) {
+            set_env_var("PATH", &self.prev_path);
+            let _ = std::fs::remove_dir_all(&self.stub_dir);
+        }
+    }
+
+    fn set_env_var(key: &str, val: &str) {
+        // Safety: callers hold `NIX_STUB_LOCK` for the whole stub lifetime.
+        #[allow(unused_unsafe)]
+        unsafe {
+            std::env::set_var(key, val);
+        }
+    }
+
+    fn sample_findings_json() -> String {
+        serde_json::to_string(&AnalysisDocument {
+            version: 1,
+            findings: vec![Finding {
+                rule: "duplication".to_string(),
+                severity: "gating".to_string(),
+                aspect_path: "den.aspects.web".to_string(),
+                position: None,
+                message: "duplicated block".to_string(),
+                fix: "extract shared aspect".to_string(),
+                doc_ref: "docs/ref".to_string(),
+            }],
+            inventory: Inventory::default(),
+            summary: None,
+        })
+        .unwrap()
+    }
+
+    fn install_nix_stub(analysis: &str, passthru: &str, injection: &str) -> NixStubEnv {
+        let lock = NIX_STUB_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let seq = NIX_STUB_SEQ.fetch_add(1, Ordering::SeqCst);
+        let stub_dir =
+            std::env::temp_dir().join(format!("den-lsp-nix-stub-{}-{}", std::process::id(), seq));
+        std::fs::create_dir_all(&stub_dir).unwrap();
+        let nix_path = stub_dir.join("nix");
+        std::fs::write(&nix_path, NIX_STUB_SCRIPT).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&nix_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let log_path = stub_dir.join("argv.log");
+        std::fs::write(&log_path, "").unwrap();
+
+        let prev_path = std::env::var("PATH").unwrap_or_default();
+        set_env_var("PATH", &format!("{}:{}", stub_dir.display(), prev_path));
+        set_env_var("DEN_LSP_NIX_STUB_LOG", &log_path.display().to_string());
+        set_env_var("DEN_LSP_NIX_STUB_ANALYSIS", analysis);
+        set_env_var("DEN_LSP_NIX_STUB_PASSTHRU", passthru);
+        set_env_var("DEN_LSP_NIX_STUB_INJECTION", injection);
+        set_env_var("DEN_LSP_NIX_STUB_JSON", &sample_findings_json());
+        set_env_var(
+            "DEN_LSP_NIX_STUB_INJECTION_STDERR",
+            "error: den-lsp: no flake-parts input (this wrapper analyzes flake-parts Den consumers)",
+        );
+
+        NixStubEnv {
+            _lock: lock,
+            log_path,
+            stub_dir,
+            prev_path,
+        }
+    }
+
+    fn stub_log(env: &NixStubEnv) -> Vec<String> {
+        std::fs::read_to_string(&env.log_path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+
+    fn is_injection_invocation(line: &str) -> bool {
+        line.contains("--override-input") && line.contains("flake-parts")
+    }
+
+    #[tokio::test]
+    async fn test_unwired_repo_resolves_via_injection_and_yields_findings() {
+        let _stub = install_nix_stub("missing", "missing", "ok");
+        let json = CommandNixEvaluator
+            .eval_analysis(PathBuf::from("/unwired"), "aarch64-darwin".to_string())
+            .await
+            .expect("unwired eval should succeed via injection");
+        let doc: AnalysisDocument = serde_json::from_str(&json).expect("v1 document");
+        assert_eq!(doc.version, 1);
+        assert!(
+            !doc.findings.is_empty(),
+            "injection target should yield findings, got: {json}"
+        );
+        let log = stub_log(&_stub);
+        assert!(
+            log.iter().any(|l| is_injection_invocation(l)),
+            "expected an injection invocation, log: {log:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wired_repo_never_attempts_injection() {
+        // Committed flake-level output present.
+        {
+            let stub = install_nix_stub("ok", "missing", "ok");
+            let json = CommandNixEvaluator
+                .eval_analysis(PathBuf::from("/wired"), "aarch64-darwin".to_string())
+                .await
+                .expect("wired den-lsp-analysis should succeed");
+            let doc: AnalysisDocument = serde_json::from_str(&json).unwrap();
+            assert!(!doc.findings.is_empty());
+            let log = stub_log(&stub);
+            assert!(
+                log.iter().all(|l| !is_injection_invocation(l)),
+                "wired primary target must not inject, log: {log:?}"
+            );
+            assert_eq!(
+                log.len(),
+                1,
+                "only the primary committed target, log: {log:?}"
+            );
+        }
+        // Older module: primary missing, passthru present.
+        {
+            let stub = install_nix_stub("missing", "ok", "ok");
+            let json = CommandNixEvaluator
+                .eval_analysis(
+                    PathBuf::from("/wired-passthru"),
+                    "aarch64-darwin".to_string(),
+                )
+                .await
+                .expect("wired passthru should succeed");
+            let doc: AnalysisDocument = serde_json::from_str(&json).unwrap();
+            assert!(!doc.findings.is_empty());
+            let log = stub_log(&stub);
+            assert!(
+                log.iter().all(|l| !is_injection_invocation(l)),
+                "wired passthru must not inject, log: {log:?}"
+            );
+            assert_eq!(log.len(), 2, "primary then passthru, log: {log:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_injection_only_after_both_committed_targets_missing_attribute() {
+        {
+            let stub = install_nix_stub("missing", "missing", "ok");
+            CommandNixEvaluator
+                .eval_analysis(PathBuf::from("/unwired"), "aarch64-darwin".to_string())
+                .await
+                .expect("injection after both missing-attribute");
+            let log = stub_log(&stub);
+            assert_eq!(
+                log.len(),
+                3,
+                "two committed probes then injection, log: {log:?}"
+            );
+            assert!(
+                log[0].contains("#den-lsp-analysis") && !is_injection_invocation(&log[0]),
+                "first call is committed den-lsp-analysis, got {}",
+                log[0]
+            );
+            assert!(
+                log[1].contains("#checks.") && log[1].contains("den-lsp.passthru.analysis"),
+                "second call is committed passthru, got {}",
+                log[1]
+            );
+            assert!(
+                is_injection_invocation(&log[2]),
+                "third call is injection, got {}",
+                log[2]
+            );
+            assert!(
+                log[2].contains("--no-write-lock-file"),
+                "injection must pass --no-write-lock-file, got {}",
+                log[2]
+            );
+            assert!(
+                log[2].contains("#den-lsp-analysis"),
+                "injection evals den-lsp-analysis on the workspace, got {}",
+                log[2]
+            );
+        }
+        // A real error on the second committed target must not inject.
+        {
+            let stub = install_nix_stub("missing", "error", "ok");
+            let err = CommandNixEvaluator
+                .eval_analysis(PathBuf::from("/broken"), "aarch64-darwin".to_string())
+                .await
+                .expect_err("passthru eval error should surface");
+            assert!(
+                err.contains("undefined variable"),
+                "expected passthru eval error, got: {err}"
+            );
+            let log = stub_log(&stub);
+            assert!(
+                log.iter().all(|l| !is_injection_invocation(l)),
+                "must not inject after a real committed-target error, log: {log:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_injection_failure_yields_eval_error_and_retains_last_known_good() {
+        let _stub = install_nix_stub("missing", "missing", "error");
+        let (res_tx, mut res_rx) = mpsc::channel(10);
+        let orchestrator = EvalOrchestrator::new(
+            Arc::new(CommandNixEvaluator),
+            PathBuf::from("/unwired-broken"),
+            move |output| {
+                let _ = res_tx.try_send(output);
+            },
+        );
+
+        let v1_doc = AnalysisDocument {
+            version: 1,
+            findings: vec![],
+            inventory: Inventory::default(),
+            summary: None,
+        };
+        *orchestrator.last_known_good.write().await = Some(v1_doc.clone());
+
+        orchestrator.trigger_eval();
+
+        let res = tokio::time::timeout(Duration::from_millis(1000), res_rx.recv()).await;
+        assert!(res.is_ok(), "expected one eval-error diagnostic");
+        match res.unwrap() {
+            Some(EvalOutput::Error { error_block, .. }) => {
+                assert!(
+                    error_block.contains("den-lsp: no flake-parts input"),
+                    "injection failure should surface the R4-style message, got: {error_block}"
+                );
+            }
+            other => panic!("expected EvalOutput::Error, got {other:?}"),
+        }
+
+        let second = tokio::time::timeout(Duration::from_millis(100), res_rx.recv()).await;
+        assert!(second.is_err(), "exactly one eval-error diagnostic");
+
+        let lkg = orchestrator.get_last_known_good().await;
+        assert_eq!(lkg, Some(v1_doc), "last-known-good must be retained");
     }
 }
