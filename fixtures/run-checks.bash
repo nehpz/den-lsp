@@ -56,7 +56,9 @@ FAILED=0
 
 preflight_unwired() {
   local target="$1"
-  nix eval --impure --expr "import ${REPO_DIR}/nix/ephemeral.nix { target = ${target}; }"
+  export DEN_LSP_TARGET
+  DEN_LSP_TARGET="$(realpath "${target}")"
+  nix eval --impure --expr "import ${REPO_DIR}/nix/ephemeral.nix { target = /. + builtins.getEnv \"DEN_LSP_TARGET\"; }"
 }
 
 # Run base fixture check (nix build)
@@ -189,24 +191,30 @@ fi
 
 echo "==> Testing unwired gating-dup variant..."
 set +e
+gdup_err="$(mktemp)"
 output=$(nix eval --json "${REPO_DIR}/fixtures/unwired/gating-dup#den-lsp-analysis" \
-  "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}" 2>&1)
+  "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}" 2>"${gdup_err}")
 exit_code=$?
 set -e
 
 if [ "${exit_code}" -eq 0 ]; then
-  if echo "${output}" | grep -q "web" && echo "${output}" | grep -q "db"; then
-    echo "PASS: unwired gating-dup (exit 0 document mentioning both 'web' and 'db')"
+  if echo "${output}" | jq -e '.findings | any(.rule == "duplication" and .severity == "gating")' >/dev/null \
+    && echo "${output}" | jq -e '.findings | any((.aspectPath // "") + " " + (.message // "") | test("web"))' >/dev/null \
+    && echo "${output}" | jq -e '.findings | any((.aspectPath // "") + " " + (.message // "") | test("db"))' >/dev/null; then
+    echo "PASS: unwired gating-dup (duplication/gating finding naming web and db)"
   else
-    echo "FAIL: unwired gating-dup document did not mention both aspect names 'web' and 'db'"
+    echo "FAIL: unwired gating-dup findings did not pin duplication/gating with web and db"
     echo "${output}"
+    cat "${gdup_err}"
     FAILED=1
   fi
 else
   echo "FAIL: unwired gating-dup expected exit 0 (analysis document) but got ${exit_code}"
   echo "${output}"
+  cat "${gdup_err}"
   FAILED=1
 fi
+rm -f "${gdup_err}"
 
 echo "==> Testing unwired advisory-only variant..."
 set +e
@@ -402,12 +410,33 @@ else
 fi
 rm -rf "${CLI_DIR}"
 
+echo "==> Testing wired gating-dup finding-set pin..."
+set +e
+expected_wired_pairs=$(nix eval --json --impure --expr \
+  "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix { }; in s.scenarios.base-gating-dup.expectedFindings" \
+  2>/dev/null | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+set -e
+set +e
+actual_wired_pairs=$(nix eval --json "${REPO_DIR}/fixtures/consumer-variants/gating-dup#den-lsp-analysis" \
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>/dev/null \
+  | jq -S '.findings | map({rule, severity}) | sort_by(.rule, .severity)')
+wired_pin_ec=$?
+set -e
+if [ "${wired_pin_ec}" -eq 0 ] && [ -n "${expected_wired_pairs}" ] && [ "${expected_wired_pairs}" = "${actual_wired_pairs}" ]; then
+  echo "PASS: wired gating-dup finding-set pin (rule/severity pairs match base-gating-dup)"
+else
+  echo "FAIL: wired gating-dup finding-set pin mismatch (exit ${wired_pin_ec})"
+  echo "expected: ${expected_wired_pairs}"
+  echo "actual: ${actual_wired_pairs}"
+  FAILED=1
+fi
+
 echo "==> Testing CLI unwired base (exit 0 report)..."
 run_cli "${REPO_DIR}/fixtures/unwired"
-if [ "${CLI_EC}" -eq 0 ] && echo "${CLI_OUT}" | grep -q "den-lsp:"; then
-  echo "PASS: CLI unwired base (exit 0 report)"
+if [ "${CLI_EC}" -eq 0 ] && [ "${CLI_OUT}" = "den-lsp: no findings." ]; then
+  echo "PASS: CLI unwired base (exit 0, den-lsp: no findings.)"
 else
-  echo "FAIL: CLI unwired base expected exit 0 with a report but got ${CLI_EC}"
+  echo "FAIL: CLI unwired base expected exit 0 with exact 'den-lsp: no findings.' but got ${CLI_EC}"
   echo "${CLI_OUT}"
   echo "${CLI_ERR}"
   FAILED=1
@@ -441,7 +470,7 @@ rm -rf "${CLI_DIR}"
 echo "==> Testing CLI --json on gating (stdout JSON v1 + duplication, stderr text)..."
 run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
 if [ "${CLI_EC}" -eq 1 ] \
-  && jq -e '.version == 1 and any(.findings[]; .rule == "duplication")' "${CLI_DIR}/out" >/dev/null \
+  && jq -e '.version == 1 and any(.findings[]; .rule == "duplication" and .severity == "gating")' "${CLI_DIR}/out" >/dev/null \
   && echo "${CLI_ERR}" | grep -q "den-lsp:" \
   && jq -e . "${CLI_DIR}/out" >/dev/null; then
   echo "PASS: CLI --json on gating (JSON v1 duplication, stderr text, stdout is JSON)"
@@ -455,12 +484,94 @@ rm -rf "${CLI_DIR}"
 
 echo "==> Testing CLI broken + --json (empty stdout, exit 2)..."
 run_cli --json "${REPO_DIR}/fixtures/unwired/broken"
-if [ "${CLI_EC}" -eq 2 ] && [ ! -s "${CLI_DIR}/out" ]; then
-  echo "PASS: CLI broken + --json (empty stdout, exit 2)"
+if [ "${CLI_EC}" -eq 2 ] && [ ! -s "${CLI_DIR}/out" ] && echo "${CLI_ERR}" | grep -q "trigger.nix"; then
+  echo "PASS: CLI broken + --json (empty stdout, exit 2, stderr names trigger.nix)"
 else
-  echo "FAIL: CLI broken + --json expected empty stdout and exit 2 but got ${CLI_EC}"
+  echo "FAIL: CLI broken + --json expected empty stdout, exit 2, and trigger.nix on stderr but got ${CLI_EC}"
   echo "stdout: ${CLI_OUT}"
   echo "stderr: ${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI R4: no-flake-parts (exit 2, named message)..."
+run_cli "${REPO_DIR}/fixtures/unwired/no-flake-parts"
+if [ "${CLI_EC}" -eq 2 ] && echo "${CLI_ERR}" | grep -q "no flake-parts input"; then
+  echo "PASS: CLI R4 no-flake-parts (exit 2, named message)"
+else
+  echo "FAIL: CLI R4 no-flake-parts expected exit 2 with no flake-parts input but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI R4: renamed-flake-parts (exit 2, named message)..."
+run_cli "${REPO_DIR}/fixtures/unwired/renamed-flake-parts"
+if [ "${CLI_EC}" -eq 2 ] && echo "${CLI_ERR}" | grep -q "nonstandard input name"; then
+  echo "PASS: CLI R4 renamed-flake-parts (exit 2, named message)"
+else
+  echo "FAIL: CLI R4 renamed-flake-parts expected exit 2 with nonstandard input name but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI R4: no-den (exit 2, named message)..."
+run_cli "${REPO_DIR}/fixtures/unwired/no-den"
+if [ "${CLI_EC}" -eq 2 ] && echo "${CLI_ERR}" | grep -q "no den input"; then
+  echo "PASS: CLI R4 no-den (exit 2, named message)"
+else
+  echo "FAIL: CLI R4 no-den expected exit 2 with no den input but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI R4: old-den (exit 2, named message)..."
+run_cli "${REPO_DIR}/fixtures/unwired/old-den"
+if [ "${CLI_EC}" -eq 2 ] && echo "${CLI_ERR}" | grep -q "v0.18.0"; then
+  echo "PASS: CLI R4 old-den (exit 2, named message)"
+else
+  echo "FAIL: CLI R4 old-den expected exit 2 naming the v0.18.0 floor but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI unwired advisory-only --json (exit 0, advisory, gating==0)..."
+run_cli --json "${REPO_DIR}/fixtures/unwired/advisory-only"
+if [ "${CLI_EC}" -eq 0 ] \
+  && jq -e '.findings | any(.severity == "advisory")' "${CLI_DIR}/out" >/dev/null \
+  && jq -e '.summary.gating == 0' "${CLI_DIR}/out" >/dev/null; then
+  echo "PASS: CLI unwired advisory-only --json (exit 0, advisory present, gating==0)"
+else
+  echo "FAIL: CLI unwired advisory-only --json did not match (exit ${CLI_EC})"
+  echo "stdout: ${CLI_OUT}"
+  echo "stderr: ${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI wired gating-dup text (exit 1)..."
+run_cli "${REPO_DIR}/fixtures/consumer-variants/gating-dup"
+if [ "${CLI_EC}" -eq 1 ] && echo "${CLI_OUT}" | grep -q "web" && echo "${CLI_OUT}" | grep -q "db"; then
+  echo "PASS: CLI wired gating-dup text (exit 1 naming web+db)"
+else
+  echo "FAIL: CLI wired gating-dup text expected exit 1 naming web+db but got ${CLI_EC}"
+  echo "${CLI_OUT}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI wired advisory-only text (exit 0)..."
+run_cli "${REPO_DIR}/fixtures/consumer-variants/advisory-only"
+if [ "${CLI_EC}" -eq 0 ] && echo "${CLI_OUT}" | grep -q "advisory"; then
+  echo "PASS: CLI wired advisory-only text (exit 0)"
+else
+  echo "FAIL: CLI wired advisory-only text expected exit 0 with advisory findings but got ${CLI_EC}"
+  echo "${CLI_OUT}"
+  echo "${CLI_ERR}"
   FAILED=1
 fi
 rm -rf "${CLI_DIR}"
@@ -505,6 +616,42 @@ if [ "${CLI_EC}" -eq 64 ] && echo "${CLI_ERR}" | grep -qi "usage"; then
   echo "PASS: CLI unknown flag (exit 64)"
 else
   echo "FAIL: CLI unknown flag expected exit 64 with usage but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI --json determinism (two runs byte-identical)..."
+run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
+first_json_dir="${CLI_DIR}"
+first_ec="${CLI_EC}"
+run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
+if [ "${first_ec}" -eq 1 ] && [ "${CLI_EC}" -eq 1 ] && cmp -s "${first_json_dir}/out" "${CLI_DIR}/out"; then
+  echo "PASS: CLI --json determinism (byte-identical stdout across two runs)"
+else
+  echo "FAIL: CLI --json stdout differed across two runs (exits ${first_ec}/${CLI_EC})"
+  diff "${first_json_dir}/out" "${CLI_DIR}/out" || true
+  FAILED=1
+fi
+rm -rf "${first_json_dir}" "${CLI_DIR}"
+
+echo "==> Testing CLI --json against eval-corpus scenario (base-gating-dup workspace)..."
+# Evidence-runner leg (U5): one eval-corpus scenario end-to-end through the
+# zero-touch CLI, findings compared against the scenario manifest's own
+# expectedFindings (rule/severity pairs) — the hermetic tier's pins.
+set +e
+expected_pairs=$(nix eval --json --impure --expr \
+  "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix { }; in s.scenarios.base-gating-dup.expectedFindings" \
+  2>/dev/null | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+set -e
+run_cli --json --draft "${REPO_DIR}/fixtures/scenarios/base-gating-dup/workspace"
+actual_pairs=$(jq -S '.findings | map({rule, severity}) | sort_by(.rule, .severity)' "${CLI_DIR}/out" 2>/dev/null || echo '[]')
+if [ "${CLI_EC}" -eq 0 ] && [ -n "${expected_pairs}" ] && [ "${expected_pairs}" = "${actual_pairs}" ]; then
+  echo "PASS: CLI --json scenario leg (findings match base-gating-dup expectedFindings)"
+else
+  echo "FAIL: CLI --json scenario leg mismatch (exit ${CLI_EC})"
+  echo "expected: ${expected_pairs}"
+  echo "actual: ${actual_pairs}"
   echo "${CLI_ERR}"
   FAILED=1
 fi

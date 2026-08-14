@@ -20,8 +20,8 @@
       imports = [
         inputs.den.flakeModules.default
         inputs.den-lsp.flakeModules.default
-        ../../consumer/modules/den.nix
-        ../../consumer/modules/igloo.nix
+        ./modules/den.nix
+        ./modules/igloo.nix
         ./trigger.nix
       ];
     };
