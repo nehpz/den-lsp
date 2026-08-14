@@ -95,10 +95,14 @@ let
           # and would produce a raw "option `den' does not exist" trace on
           # unreachable targets. Capture is invoked directly against config.den.
           config.flake.den-lsp-analysis =
-            if !(options ? den) then
-              throw messages.unreachable
-            else if !(inputs ? den) then
+            # Order matters: a target with no den input also lacks the den
+            # option, so test the input first or that case would be
+            # mislabeled as unreachable-config (the eval-only callers — the
+            # LSP server — rely on these named reasons).
+            if !(inputs ? den) then
               throw messages.noDen
+            else if !(options ? den) then
+              throw messages.unreachable
             else if denTooOld inputs.den then
               throw messages.versionFloor
             else
@@ -121,8 +125,12 @@ let
         ];
       };
     in
-    {
-      inherit (real) flakeModules templates;
+    # Forward every real flake-parts output and override only lib: a consumer
+    # (or a transitive input whose flake-parts follows the root's) may
+    # reference attributes beyond lib/flakeModules/templates, and dropping
+    # them would surface a raw attribute-missing trace instead of analysis.
+    real
+    // {
       lib = real.lib // {
         mkFlake = args: module: real.lib.mkFlake args (wrapModule module);
         evalFlakeModule = args: module: real.lib.evalFlakeModule args (wrapModule module);
