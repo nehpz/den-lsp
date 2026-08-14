@@ -411,9 +411,11 @@ fi
 rm -rf "${CLI_DIR}"
 
 echo "==> Testing wired gating-dup finding-set pin..."
+set +e
 expected_wired_pairs=$(nix eval --json --impure --expr \
   "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix { }; in s.scenarios.base-gating-dup.expectedFindings" \
-  | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+  2>/dev/null | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+set -e
 set +e
 actual_wired_pairs=$(nix eval --json "${REPO_DIR}/fixtures/consumer-variants/gating-dup#den-lsp-analysis" \
   "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>/dev/null \
@@ -637,9 +639,11 @@ echo "==> Testing CLI --json against eval-corpus scenario (base-gating-dup works
 # Evidence-runner leg (U5): one eval-corpus scenario end-to-end through the
 # zero-touch CLI, findings compared against the scenario manifest's own
 # expectedFindings (rule/severity pairs) — the hermetic tier's pins.
+set +e
 expected_pairs=$(nix eval --json --impure --expr \
   "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix { }; in s.scenarios.base-gating-dup.expectedFindings" \
-  | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+  2>/dev/null | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+set -e
 run_cli --json --draft "${REPO_DIR}/fixtures/scenarios/base-gating-dup/workspace"
 actual_pairs=$(jq -S '.findings | map({rule, severity}) | sort_by(.rule, .severity)' "${CLI_DIR}/out" 2>/dev/null || echo '[]')
 if [ "${CLI_EC}" -eq 0 ] && [ -n "${expected_pairs}" ] && [ "${expected_pairs}" = "${actual_pairs}" ]; then
