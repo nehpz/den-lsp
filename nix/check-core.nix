@@ -1,7 +1,9 @@
-# Shared gate construction (KD5, R9, R10): from a pkgs set and the
+# Shared gate construction (KD5, R9, R10, KTD6): from a pkgs set and the
 # consumer's den config, build the check derivation and the report app.
 # Wrapped by nix/check.nix (flake-parts consumers) and
 # nix/check-noflake.nix (plain evalModules consumers).
+# The standalone CLI (nix/check-cli.nix) consumes outcomeFor / gatingNotice
+# so module-app and field CLI share one renderer and exit mapping.
 #
 # R13 (eval-failure behavior): the document build is deliberately NOT
 # wrapped in tryEval. When the consumer configuration fails to evaluate,
@@ -21,6 +23,42 @@ rec {
       ir = den.lib.analysis.capture { classes = builtins.attrNames (den.classes or { }); };
     };
 
+  gatingNotice = "den-lsp: gating findings — apply the fixes above.";
+
+  # One renderer + exit-semantics source (KTD6). `strictness` is "gate"
+  # (default) or "draft"; it only changes the exit code, never findings.
+  outcomeFor = doc: rec {
+    text = den-lsp.lib.renderText doc;
+    hasGating = doc.summary.gating > 0;
+    exitCode =
+      strictness:
+      if strictness == "draft" then
+        0
+      else if hasGating then
+        1
+      else
+        0;
+  };
+
+  # Module-app script body: text report on stdout; exit 0 clean/advisory,
+  # exit 1 gating. The standalone CLI reprints from outcomeFor so this
+  # stays the baked equivalent of --gate text mode.
+  textModeGateScript =
+    { report, hasGating }:
+    ''
+      cat ${report}
+    ''
+    + (
+      if hasGating then
+        ''
+          echo
+          echo "${gatingNotice}" >&2
+          exit 1
+        ''
+      else
+        ""
+    );
+
   gateFor =
     {
       pkgs,
@@ -28,21 +66,15 @@ rec {
       den,
     }:
     let
-      engine = den-lsp.lib;
       doc = analysisFor { inherit den; };
-      text = engine.renderText doc;
-      hasGating = doc.summary.gating > 0;
-      report = pkgs.writeText "den-lsp-report.txt" text;
+      outcome = outcomeFor doc;
+      report = pkgs.writeText "den-lsp-report.txt" outcome.text;
       checkScript = pkgs.writeShellApplication {
         name = "den-lsp-check";
-        text = ''
-          cat ${report}
-          ${lib.optionalString hasGating ''
-            echo
-            echo "den-lsp: gating findings — apply the fixes above." >&2
-            exit 1
-          ''}
-        '';
+        text = textModeGateScript {
+          inherit report;
+          inherit (outcome) hasGating;
+        };
       };
     in
     {
@@ -53,11 +85,11 @@ rec {
             inherit report;
           }
           (
-            if hasGating then
+            if outcome.hasGating then
               ''
                 cat "$report" >&2
                 echo >&2
-                echo "den-lsp: gating findings — apply the fixes above." >&2
+                echo "${gatingNotice}" >&2
                 exit 1
               ''
             else
