@@ -37,9 +37,22 @@ pub trait NixEvaluator: Send + Sync + 'static {
     ) -> futures_util::future::BoxFuture<'static, Result<String, String>>;
 }
 
+/// Mirrors the CLI's `classify_eval_err` non-fatal set (nix/check-cli.bash):
+/// an error in this set means "this committed target is absent/unusable —
+/// fall through", never "stop with a real eval failure". Nix phrases the
+/// nested passthru miss as `attribute 'den-lsp' missing`, and a consumer
+/// that declares a den-lsp input its outputs can't resolve phrases it as an
+/// input error; both must reach the ephemeral-injection fallback.
 fn is_missing_attribute(stderr: &str) -> bool {
     stderr.contains("does not provide attribute")
         || stderr.contains("attribute 'den-lsp-analysis' missing")
+        || stderr.contains("attribute 'den-lsp' missing")
+        || stderr.contains("does not provide input 'den-lsp'")
+        || stderr.contains("does not have input 'den-lsp'")
+        || stderr.contains("input 'den-lsp' not found")
+        || stderr.contains("input 'den-lsp' does not exist")
+        || stderr.contains("has no input 'den-lsp'")
+        || stderr.contains("non-existent input 'den-lsp'")
 }
 
 /// Location of the KTD1a shim flake (`nix/` in the den-lsp tree).
@@ -155,7 +168,10 @@ impl NixEvaluator for CommandNixEvaluator {
             let mut last_err = String::new();
             let mut missing_committed = 0usize;
             for expr in &committed {
-                match nix_eval_json(&["eval", "--json", expr]).await {
+                // --no-write-lock-file: an editor-triggered eval must never
+                // mutate the user's repo (same flag the CLI passes on every
+                // analysis eval).
+                match nix_eval_json(&["eval", "--json", expr, "--no-write-lock-file"]).await {
                     Ok(stdout) => return Ok(stdout),
                     Err(err) => {
                         last_err = err;
@@ -921,8 +937,10 @@ mod tests {
     static NIX_STUB_LOCK: Mutex<()> = Mutex::new(());
     static NIX_STUB_SEQ: AtomicUsize = AtomicUsize::new(0);
 
-    const NIX_STUB_SCRIPT: &str = r#"#!/usr/bin/env bash
-set -euo pipefail
+    // POSIX sh, /bin/sh shebang: /usr/bin/env does not exist inside the Nix
+    // Linux build sandbox, where the packaged test phase runs this stub.
+    const NIX_STUB_SCRIPT: &str = r#"#!/bin/sh
+set -eu
 echo "$@" >> "${DEN_LSP_NIX_STUB_LOG}"
 
 has_override=0
@@ -938,12 +956,12 @@ for arg in "$@"; do
   esac
 done
 
-if [[ $has_current_system -eq 1 ]]; then
+if [ "$has_current_system" -eq 1 ]; then
   printf '%s' "${DEN_LSP_NIX_STUB_SYSTEM:-aarch64-darwin}"
   exit 0
 fi
 
-if [[ $has_override -eq 1 ]]; then
+if [ "$has_override" -eq 1 ]; then
   case "${DEN_LSP_NIX_STUB_INJECTION:-ok}" in
     ok)
       printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
@@ -956,7 +974,7 @@ if [[ $has_override -eq 1 ]]; then
   esac
 fi
 
-if [[ $has_passthru -eq 1 ]]; then
+if [ "$has_passthru" -eq 1 ]; then
   case "${DEN_LSP_NIX_STUB_PASSTHRU:-missing}" in
     ok)
       printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
@@ -973,7 +991,7 @@ if [[ $has_passthru -eq 1 ]]; then
   esac
 fi
 
-if [[ $has_analysis -eq 1 ]]; then
+if [ "$has_analysis" -eq 1 ]; then
   case "${DEN_LSP_NIX_STUB_ANALYSIS:-missing}" in
     ok)
       printf '%s' "${DEN_LSP_NIX_STUB_JSON}"
@@ -1205,6 +1223,29 @@ exit 1
                 "must not inject after a real committed-target error, log: {log:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_nested_missing_attribute_wording_reaches_injection() {
+        // Nix phrases the passthru miss as "attribute 'den-lsp' missing" on
+        // some paths; that wording must be classified as fall-through so the
+        // zero-touch fallback still fires (CLI classifier parity).
+        let stub = install_nix_stub("missing", "error", "ok");
+        set_env_var(
+            "DEN_LSP_NIX_STUB_PASSTHRU_STDERR",
+            "error: attribute 'den-lsp' missing",
+        );
+        let json = CommandNixEvaluator
+            .eval_analysis(PathBuf::from("/unwired"), "aarch64-darwin".to_string())
+            .await
+            .expect("nested missing-attribute wording should reach injection");
+        std::env::remove_var("DEN_LSP_NIX_STUB_PASSTHRU_STDERR");
+        assert!(json.contains("\"version\""), "injection yielded a document");
+        let log = stub_log(&stub);
+        assert!(
+            log.iter().any(|l| is_injection_invocation(l)),
+            "expected an injection invocation, log: {log:?}"
+        );
     }
 
     #[tokio::test]
