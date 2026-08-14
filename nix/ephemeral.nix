@@ -130,11 +130,14 @@ let
         ];
       };
     in
-    # Forward every real flake-parts output and override only lib: a consumer
-    # (or a transitive input whose flake-parts follows the root's) may
-    # reference attributes beyond lib/flakeModules/templates, and dropping
-    # them would surface a raw attribute-missing trace instead of analysis.
-    real
+    # Forward exactly the real flake-parts OUTPUTS and override only lib: a
+    # consumer (or a transitive input whose flake-parts follows the root's)
+    # may reference attributes beyond lib/flakeModules/templates, and
+    # dropping them would surface a raw attribute-missing trace. Base on
+    # `real.outputs` — not the raw flake value — so identity keys (outPath,
+    # sourceInfo, narHash, ...) are not re-emitted as outputs; Nix's
+    # call-flake wrapper supplies the shim's own identity keys.
+    (real.outputs or real)
     // {
       lib = real.lib // {
         mkFlake = args: module: real.lib.mkFlake args (wrapModule module);
