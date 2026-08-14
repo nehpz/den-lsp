@@ -9,12 +9,8 @@
     nixpkgs-lib.url = "github:nix-community/nixpkgs.lib";
   };
 
-  outputs =
-    inputs:
-    let
-      inherit (import ./ephemeral.nix { inherit inputs; }) lib flakeModules templates;
-    in
-    {
-      inherit lib flakeModules templates;
-    };
+  # Forward the shim's full result (every real flake-parts output with only
+  # lib overridden) — re-narrowing here would defeat ephemeral.nix's
+  # pass-through for consumers that reference other flake-parts attributes.
+  outputs = inputs: import ./ephemeral.nix { inherit inputs; };
 }
