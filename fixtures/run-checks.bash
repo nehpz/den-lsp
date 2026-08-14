@@ -441,7 +441,7 @@ rm -rf "${CLI_DIR}"
 echo "==> Testing CLI --json on gating (stdout JSON v1 + duplication, stderr text)..."
 run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
 if [ "${CLI_EC}" -eq 1 ] \
-  && jq -e '.version == 1 and any(.findings[]; .rule == "duplication")' "${CLI_DIR}/out" >/dev/null \
+  && jq -e '.version == 1 and any(.findings[]; .rule == "duplication" and .severity == "gating")' "${CLI_DIR}/out" >/dev/null \
   && echo "${CLI_ERR}" | grep -q "den-lsp:" \
   && jq -e . "${CLI_DIR}/out" >/dev/null; then
   echo "PASS: CLI --json on gating (JSON v1 duplication, stderr text, stdout is JSON)"
@@ -505,6 +505,40 @@ if [ "${CLI_EC}" -eq 64 ] && echo "${CLI_ERR}" | grep -qi "usage"; then
   echo "PASS: CLI unknown flag (exit 64)"
 else
   echo "FAIL: CLI unknown flag expected exit 64 with usage but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI --json determinism (two runs byte-identical)..."
+run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
+first_json_dir="${CLI_DIR}"
+first_ec="${CLI_EC}"
+run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
+if [ "${first_ec}" -eq 1 ] && [ "${CLI_EC}" -eq 1 ] && cmp -s "${first_json_dir}/out" "${CLI_DIR}/out"; then
+  echo "PASS: CLI --json determinism (byte-identical stdout across two runs)"
+else
+  echo "FAIL: CLI --json stdout differed across two runs (exits ${first_ec}/${CLI_EC})"
+  diff "${first_json_dir}/out" "${CLI_DIR}/out" || true
+  FAILED=1
+fi
+rm -rf "${first_json_dir}" "${CLI_DIR}"
+
+echo "==> Testing CLI --json against eval-corpus scenario (base-gating-dup workspace)..."
+# Evidence-runner leg (U5): one eval-corpus scenario end-to-end through the
+# zero-touch CLI, findings compared against the scenario manifest's own
+# expectedFindings (rule/severity pairs) — the hermetic tier's pins.
+expected_pairs=$(nix eval --json --impure --expr \
+  "let s = import ${REPO_DIR}/fixtures/scenarios/lib.nix { }; in s.scenarios.base-gating-dup.expectedFindings" \
+  | jq -S 'map({rule, severity}) | sort_by(.rule, .severity)')
+run_cli --json --draft "${REPO_DIR}/fixtures/scenarios/base-gating-dup/workspace"
+actual_pairs=$(jq -S '.findings | map({rule, severity}) | sort_by(.rule, .severity)' "${CLI_DIR}/out" 2>/dev/null || echo '[]')
+if [ "${CLI_EC}" -eq 0 ] && [ -n "${expected_pairs}" ] && [ "${expected_pairs}" = "${actual_pairs}" ]; then
+  echo "PASS: CLI --json scenario leg (findings match base-gating-dup expectedFindings)"
+else
+  echo "FAIL: CLI --json scenario leg mismatch (exit ${CLI_EC})"
+  echo "expected: ${expected_pairs}"
+  echo "actual: ${actual_pairs}"
   echo "${CLI_ERR}"
   FAILED=1
 fi
