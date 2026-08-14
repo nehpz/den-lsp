@@ -211,6 +211,18 @@ pub fn parse_nix_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
     (error_block, position)
 }
 
+/// Strip `TIMEOUT_SENTINEL` from a synthetic deadline, or parse real nix stderr.
+/// Both the per-eval (`nix_eval_json`) deadline and the orchestrator-level
+/// `tokio::time::timeout` around `eval_analysis` produce sentinel-prefixed
+/// messages so this classification stays uniform.
+fn classify_eval_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
+    if let Some(msg) = stderr.strip_prefix(TIMEOUT_SENTINEL) {
+        (msg.to_string(), None)
+    } else {
+        parse_nix_stderr(stderr)
+    }
+}
+
 pub struct EvalOrchestrator {
     last_known_good: Arc<RwLock<Option<AnalysisDocument>>>,
     trigger_tx: mpsc::Sender<()>,
@@ -278,19 +290,19 @@ impl EvalOrchestrator {
                         Some(s) => s,
                         None => {
                             let sys_res =
-                                tokio::time::timeout(eval_timeout, evaluator.detect_system())
-                                    .await;
+                                tokio::time::timeout(eval_timeout, evaluator.detect_system()).await;
                             match sys_res {
                                 Ok(Ok(s)) => {
                                     *cached_system.write().await = Some(s.clone());
                                     s
                                 }
                                 Ok(Err(e)) => {
-                                    let (error_block, position) = if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
-                                        (msg.to_string(), None)
-                                    } else {
-                                        (format!("Failed to detect system: {}", e), None)
-                                    };
+                                    let (error_block, position) =
+                                        if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
+                                            (msg.to_string(), None)
+                                        } else {
+                                            (format!("Failed to detect system: {}", e), None)
+                                        };
                                     publish_eval_result(
                                         &generation,
                                         current_gen,
@@ -305,18 +317,25 @@ impl EvalOrchestrator {
                                     return;
                                 }
                                 Err(_) => {
-                                    let err_msg = format!(
-                                        "Nix system detection timed out after {}s",
+                                    let e = format!(
+                                        "{}Nix system detection timed out after {}s",
+                                        TIMEOUT_SENTINEL,
                                         eval_timeout.as_secs()
                                     );
+                                    let (error_block, position) =
+                                        if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
+                                            (msg.to_string(), None)
+                                        } else {
+                                            (format!("Failed to detect system: {}", e), None)
+                                        };
                                     publish_eval_result(
                                         &generation,
                                         current_gen,
                                         &last_known_good,
                                         on_eval_complete.as_ref(),
                                         EvalOutput::Error {
-                                            error_block: err_msg,
-                                            position: None,
+                                            error_block,
+                                            position,
                                         },
                                     )
                                     .await;
@@ -346,33 +365,29 @@ impl EvalOrchestrator {
                                         ))
                                     }
                                 }
-                                Err(err) => {
-                                    EvalOutput::VersionMismatchOrInvalidJson(format!(
-                                        "Failed to parse analysis JSON: {}",
-                                        err
-                                    ))
-                                }
+                                Err(err) => EvalOutput::VersionMismatchOrInvalidJson(format!(
+                                    "Failed to parse analysis JSON: {}",
+                                    err
+                                )),
                             }
                         }
                         Ok(Err(stderr)) => {
-                            let (error_block, position) = if let Some(msg) = stderr.strip_prefix(TIMEOUT_SENTINEL) {
-                                (msg.to_string(), None)
-                            } else {
-                                parse_nix_stderr(&stderr)
-                            };
+                            let (error_block, position) = classify_eval_stderr(&stderr);
                             EvalOutput::Error {
                                 error_block,
                                 position,
                             }
                         }
                         Err(_) => {
-                            let err_msg = format!(
-                                "Nix evaluation timed out after {}s",
+                            let stderr = format!(
+                                "{}Nix evaluation timed out after {}s",
+                                TIMEOUT_SENTINEL,
                                 eval_timeout.as_secs()
                             );
+                            let (error_block, position) = classify_eval_stderr(&stderr);
                             EvalOutput::Error {
-                                error_block: err_msg,
-                                position: None,
+                                error_block,
+                                position,
                             }
                         }
                     };
@@ -629,6 +644,11 @@ mod tests {
                 "Expected error_block to contain 'timed out', got: {}",
                 error_block
             );
+            assert!(
+                error_block.find(TIMEOUT_SENTINEL).is_none(),
+                "TIMEOUT_SENTINEL is an internal marker and must be stripped before publish, got: {}",
+                error_block
+            );
         } else {
             panic!("Expected EvalOutput::Error, got {:?}", output);
         }
@@ -666,6 +686,11 @@ mod tests {
             assert!(
                 error_block.contains("timed out"),
                 "Expected error_block to contain 'timed out', got: {}",
+                error_block
+            );
+            assert!(
+                error_block.find(TIMEOUT_SENTINEL).is_none(),
+                "TIMEOUT_SENTINEL is an internal marker and must be stripped before publish, got: {}",
                 error_block
             );
         } else {
@@ -871,9 +896,10 @@ mod tests {
         });
 
         let (res_tx, mut res_rx) = mpsc::channel(10);
-        let orchestrator = EvalOrchestrator::new(mock, PathBuf::from("/workspace"), move |output| {
-            let _ = res_tx.try_send(output);
-        });
+        let orchestrator =
+            EvalOrchestrator::new(mock, PathBuf::from("/workspace"), move |output| {
+                let _ = res_tx.try_send(output);
+            });
 
         orchestrator.trigger_eval();
 
@@ -1179,6 +1205,37 @@ exit 1
                 "must not inject after a real committed-target error, log: {log:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_real_eval_error_on_primary_analysis_short_circuits_chain() {
+        // Real evaluation failure on the PRIMARY committed target must surface
+        // immediately: no passthru probe, no injection argv.
+        // passthru=ok / injection=ok so a missing short-circuit would succeed
+        // instead of returning Err.
+        let stub = install_nix_stub("error", "ok", "ok");
+        let err = CommandNixEvaluator
+            .eval_analysis(
+                PathBuf::from("/broken-primary"),
+                "aarch64-darwin".to_string(),
+            )
+            .await
+            .expect_err("primary analysis eval error should surface");
+        assert!(
+            err.contains("undefined variable"),
+            "expected analysis stderr, got: {err}"
+        );
+        let log = stub_log(&stub);
+        assert_eq!(
+            log.len(),
+            1,
+            "only the primary target; no passthru probe, no injection argv, log: {log:?}"
+        );
+        assert!(
+            log[0].contains("#den-lsp-analysis") && !is_injection_invocation(&log[0]),
+            "single call is committed den-lsp-analysis, got {}",
+            log[0]
+        );
     }
 
     #[tokio::test]
