@@ -18,8 +18,8 @@
 
       imports = [
         inputs.den.flakeModules.default
-        ../modules/den.nix
-        ../modules/igloo.nix
+        ./modules/den.nix
+        ./modules/igloo.nix
       ];
     };
 }

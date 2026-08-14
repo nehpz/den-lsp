@@ -29,11 +29,12 @@ Exit codes:
       Exit-2 stderr carries stable den-lsp:-prefixed reason lines
       (the R4 vocabulary) that scripts may match.
   3   Evaluation timed out
-  64  Usage error (missing path, unknown flag, --draft and --gate together)
+  64  Usage error (missing or invalid path, unknown flag, --draft and
+      --gate together)
 
-The <path> argument must not contain whitespace or the flake-ref
-reserved characters # and ?; Nix cannot encode those in a flake
-reference.
+The <path> argument must be an existing directory and must not contain
+whitespace or the flake-ref reserved characters # and ? (Nix cannot
+encode those in a flake reference); violations are usage errors.
 EOF
 }
 
@@ -41,6 +42,15 @@ json=0
 strictness=""
 deadline="${DEN_LSP_CHECK_DEADLINE:-60}"
 target=""
+
+# Internal (test-harness only, not part of the CLI contract): extra args
+# appended to the analysis nix evals, e.g. hermetic --reference-lock-file /
+# --override-input pins from fixtures/run-checks.bash. Field invocations
+# leave this unset: the target's own flake.lock governs.
+extra_nix_args=()
+if [ -n "${DEN_LSP_CHECK_NIX_ARGS:-}" ]; then
+  read -r -a extra_nix_args <<<"${DEN_LSP_CHECK_NIX_ARGS}"
+fi
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -84,7 +94,17 @@ while [ "$#" -gt 0 ]; do
       exit 0
       ;;
     --)
+      # End of options: everything after -- is positional.
       shift
+      while [ "$#" -gt 0 ]; do
+        if [ -n "${target}" ]; then
+          echo "den-lsp-check: unexpected extra argument: $1" >&2
+          usage >&2
+          exit 64
+        fi
+        target="$1"
+        shift
+      done
       ;;
     -*)
       echo "den-lsp-check: unknown flag: $1" >&2
@@ -114,6 +134,9 @@ case "${deadline}" in
     exit 64
     ;;
 esac
+# Force base-10: a leading zero would otherwise be read as octal in later
+# arithmetic (010 -> 8s; 08/09 -> abort with a misleading exit).
+deadline=$((10#${deadline}))
 
 if [ -z "${target}" ]; then
   echo "den-lsp-check: missing <path> argument" >&2
@@ -132,7 +155,7 @@ fi
 
 if [ ! -d "${target}" ]; then
   echo "den-lsp-check: target is not a directory: ${target}" >&2
-  exit 2
+  exit 64
 fi
 
 abs_target="$(realpath "${target}")"
@@ -216,28 +239,32 @@ classify_eval_err() {
 
 fail_eval() {
   local reason_file="$1"
-  echo "den-lsp-check: analysis failure" >&2
+  echo "den-lsp: analysis failure" >&2
   if [ -s "${reason_file}" ]; then
     cat "${reason_file}" >&2
   else
-    echo "den-lsp-check: nix eval failed" >&2
+    echo "den-lsp: nix eval failed" >&2
   fi
   exit 2
 }
 
 # Nix flake refs cannot encode whitespace or # / ? in the directory path
-# (quoted path: scheme still parses as a URL). Fail clearly instead of a
-# confusing nix error.
+# (quoted path: scheme still parses as a URL). A usage error, not an
+# analysis failure.
 case "${abs_target}" in
   *[[:space:]]* | *'#'* | *'?'*)
-    printf '%s\n' "den-lsp: target path cannot contain whitespace or flake-ref reserved characters (#, ?)" >"${eval_err}"
-    fail_eval "${eval_err}"
+    echo "den-lsp-check: target path cannot contain whitespace or flake-ref reserved characters (#, ?)" >&2
+    exit 64
     ;;
 esac
 
 eval_document() {
+  # path: (not a bare dir ref): a bare ref is git-based and hides files the
+  # author created but has not committed — the mid-edit --draft checkpoint
+  # must see the working tree, matching the LSP server's path: evals.
   run_bounded "${doc_json}" "${eval_err}" nix eval --json --no-write-lock-file \
-    "${abs_target}#den-lsp-analysis" "$@"
+    "path:${abs_target}#den-lsp-analysis" "$@" \
+    ${extra_nix_args[@]+"${extra_nix_args[@]}"}
 }
 
 echo "den-lsp-check: evaluating ${abs_target}" >&2
@@ -260,8 +287,9 @@ else
     fi
     system="$(cat "${workdir}/system.out")"
     run_bounded "${doc_json}" "${eval_err}" nix eval --json --no-write-lock-file \
-      "${abs_target}#checks.${system}.den-lsp.passthru.analysis" \
-      --override-input den-lsp "${DEN_LSP_SRC}"
+      "path:${abs_target}#checks.${system}.den-lsp.passthru.analysis" \
+      --override-input den-lsp "${DEN_LSP_SRC}" \
+      ${extra_nix_args[@]+"${extra_nix_args[@]}"}
     if [ "${bound_ec}" -eq 124 ]; then
       emit_timeout
     elif [ "${bound_ec}" -eq 0 ]; then
@@ -297,12 +325,16 @@ if [ "${kind}" = "unwired" ]; then
 fi
 
 if [ ! -s "${doc_json}" ]; then
-  echo "den-lsp-check: analysis failure: empty document" >&2
+  echo "den-lsp: analysis failure: empty document" >&2
   exit 2
 fi
 
+export DEN_LSP_DOC_JSON="${doc_json}"
+export DEN_LSP_STRICTNESS="${strictness}"
+# Values pass out-of-band via env (same rule as DEN_LSP_TARGET): never
+# splice shell strings into a nix --expr, even internally generated ones.
 run_bounded "${outcome_json}" "${eval_err}" nix eval --impure --json --expr \
-  "import ${OUTCOME_HELPER} { jsonFile = \"${doc_json}\"; strictness = \"${strictness}\"; }"
+  "import ${OUTCOME_HELPER} { jsonFile = /. + builtins.getEnv \"DEN_LSP_DOC_JSON\"; strictness = builtins.getEnv \"DEN_LSP_STRICTNESS\"; }"
 if [ "${bound_ec}" -eq 124 ]; then
   emit_timeout
 elif [ "${bound_ec}" -ne 0 ]; then

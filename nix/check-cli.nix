@@ -39,6 +39,7 @@ pkgs.writeShellApplication {
   runtimeInputs = [
     pkgs.bash
     pkgs.coreutils
+    pkgs.gnugrep
     pkgs.jq
   ];
   text = ''

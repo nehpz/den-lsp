@@ -373,7 +373,11 @@ fi
 run_cli() {
   CLI_DIR="$(mktemp -d)"
   set +e
-  nix run "${REPO_DIR}#den-lsp-check" -- "$@" >"${CLI_DIR}/out" 2>"${CLI_DIR}/err"
+  # Pass the hermetic pins through the CLI's internal test-harness knob so
+  # CLI rows resolve the same den/nixpkgs/flake-parts as every other row
+  # (field invocations rely on the target's own lock instead).
+  DEN_LSP_CHECK_NIX_ARGS="${PIN_ARGS[*]+"${PIN_ARGS[*]}"}" \
+    nix run "${REPO_DIR}#den-lsp-check" -- "$@" >"${CLI_DIR}/out" 2>"${CLI_DIR}/err"
   CLI_EC=$?
   set -e
   CLI_OUT="$(cat "${CLI_DIR}/out")"
