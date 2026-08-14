@@ -45,6 +45,17 @@
         }/bin/evidence-runner";
       };
 
+      # Standalone field CLI (U2+U3): nix run .#den-lsp-check -- <path>
+      apps.den-lsp-check = {
+        type = "app";
+        program = "${
+          import ./check-cli.nix {
+            inherit pkgs lib;
+            den-lsp-src = ../.;
+          }
+        }/bin/den-lsp-check";
+      };
+
       packages.den-lsp-server = pkgs.rustPlatform.buildRustPackage {
         pname = "den-lsp-server";
         version = "0.1.0";

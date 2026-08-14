@@ -368,6 +368,144 @@ else
   FAILED=1
 fi
 
+# --- Standalone CLI + agent contract (U2+U3) ---
+
+run_cli() {
+  CLI_DIR="$(mktemp -d)"
+  set +e
+  nix run "${REPO_DIR}#den-lsp-check" -- "$@" >"${CLI_DIR}/out" 2>"${CLI_DIR}/err"
+  CLI_EC=$?
+  set -e
+  CLI_OUT="$(cat "${CLI_DIR}/out")"
+  CLI_ERR="$(cat "${CLI_DIR}/err")"
+}
+
+echo "==> Testing CLI vs module app report identical (fixtures/consumer)..."
+set +e
+module_stdout=$(nix run "${REPO_DIR}/fixtures/consumer#den-lsp-check" \
+  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>/dev/null)
+module_ec=$?
+set -e
+run_cli "${REPO_DIR}/fixtures/consumer"
+if [ "${module_ec}" -eq 0 ] && [ "${CLI_EC}" -eq 0 ] && [ "${module_stdout}" = "${CLI_OUT}" ]; then
+  echo "PASS: CLI vs module app report identical"
+else
+  echo "FAIL: CLI vs module app reports differ (module exit ${module_ec}, CLI exit ${CLI_EC})"
+  echo "module: ${module_stdout}"
+  echo "cli: ${CLI_OUT}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI unwired base (exit 0 report)..."
+run_cli "${REPO_DIR}/fixtures/unwired"
+if [ "${CLI_EC}" -eq 0 ] && echo "${CLI_OUT}" | grep -q "den-lsp:"; then
+  echo "PASS: CLI unwired base (exit 0 report)"
+else
+  echo "FAIL: CLI unwired base expected exit 0 with a report but got ${CLI_EC}"
+  echo "${CLI_OUT}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI unwired gating-dup (exit 1 naming web+db)..."
+run_cli "${REPO_DIR}/fixtures/unwired/gating-dup"
+if [ "${CLI_EC}" -eq 1 ] && echo "${CLI_OUT}" | grep -q "web" && echo "${CLI_OUT}" | grep -q "db"; then
+  echo "PASS: CLI unwired gating-dup (exit 1 naming web+db)"
+else
+  echo "FAIL: CLI unwired gating-dup expected exit 1 naming web+db but got ${CLI_EC}"
+  echo "${CLI_OUT}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI --draft on gating (exit 0, findings still shown)..."
+run_cli --draft "${REPO_DIR}/fixtures/unwired/gating-dup"
+if [ "${CLI_EC}" -eq 0 ] && echo "${CLI_OUT}" | grep -q "web" && echo "${CLI_OUT}" | grep -q "db"; then
+  echo "PASS: CLI --draft on gating (exit 0, findings still shown)"
+else
+  echo "FAIL: CLI --draft on gating expected exit 0 with findings but got ${CLI_EC}"
+  echo "${CLI_OUT}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI --json on gating (stdout JSON v1 + duplication, stderr text)..."
+run_cli --json "${REPO_DIR}/fixtures/unwired/gating-dup"
+if [ "${CLI_EC}" -eq 1 ] \
+  && jq -e '.version == 1 and any(.findings[]; .rule == "duplication")' "${CLI_DIR}/out" >/dev/null \
+  && echo "${CLI_ERR}" | grep -q "den-lsp:" \
+  && jq -e . "${CLI_DIR}/out" >/dev/null; then
+  echo "PASS: CLI --json on gating (JSON v1 duplication, stderr text, stdout is JSON)"
+else
+  echo "FAIL: CLI --json on gating did not match the contract (exit ${CLI_EC})"
+  echo "stdout: ${CLI_OUT}"
+  echo "stderr: ${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI broken + --json (empty stdout, exit 2)..."
+run_cli --json "${REPO_DIR}/fixtures/unwired/broken"
+if [ "${CLI_EC}" -eq 2 ] && [ ! -s "${CLI_DIR}/out" ]; then
+  echo "PASS: CLI broken + --json (empty stdout, exit 2)"
+else
+  echo "FAIL: CLI broken + --json expected empty stdout and exit 2 but got ${CLI_EC}"
+  echo "stdout: ${CLI_OUT}"
+  echo "stderr: ${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI near-zero deadline (exit 3, empty stdout)..."
+run_cli --json --deadline 0 "${REPO_DIR}/fixtures/unwired"
+if [ "${CLI_EC}" -eq 3 ] && [ ! -s "${CLI_DIR}/out" ]; then
+  echo "PASS: CLI near-zero deadline (exit 3, empty stdout)"
+else
+  echo "FAIL: CLI near-zero deadline expected exit 3 empty stdout but got ${CLI_EC}"
+  echo "stdout: ${CLI_OUT}"
+  echo "stderr: ${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI --draft --gate (exit 64)..."
+run_cli --draft --gate "${REPO_DIR}/fixtures/unwired"
+if [ "${CLI_EC}" -eq 64 ] && echo "${CLI_ERR}" | grep -qi "usage"; then
+  echo "PASS: CLI --draft --gate (exit 64)"
+else
+  echo "FAIL: CLI --draft --gate expected exit 64 with usage but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI no path (exit 64)..."
+run_cli
+if [ "${CLI_EC}" -eq 64 ] && echo "${CLI_ERR}" | grep -qi "usage"; then
+  echo "PASS: CLI no path (exit 64)"
+else
+  echo "FAIL: CLI no path expected exit 64 with usage but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
+echo "==> Testing CLI unknown flag (exit 64)..."
+run_cli --unknown "${REPO_DIR}/fixtures/unwired"
+if [ "${CLI_EC}" -eq 64 ] && echo "${CLI_ERR}" | grep -qi "usage"; then
+  echo "PASS: CLI unknown flag (exit 64)"
+else
+  echo "FAIL: CLI unknown flag expected exit 64 with usage but got ${CLI_EC}"
+  echo "${CLI_ERR}"
+  FAILED=1
+fi
+rm -rf "${CLI_DIR}"
+
 echo
 if [ "${FAILED}" -eq 0 ]; then
   echo "ALL FIXTURE CHECKS PASSED!"
