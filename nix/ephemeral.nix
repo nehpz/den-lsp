@@ -94,7 +94,11 @@ let
           # Do not assign config.den.* — that requires the den option to exist
           # and would produce a raw "option `den' does not exist" trace on
           # unreachable targets. Capture is invoked directly against config.den.
-          config.flake.den-lsp-analysis =
+          # mkDefault (mirroring nix/inject-analysis.nix): a wired consumer
+          # already defines this attribute via its committed module, and the
+          # shim's definition must yield to it instead of conflicting when
+          # someone points the override at a wired repo.
+          config.flake.den-lsp-analysis = lib.mkDefault (
             # Order matters: a target with no den input also lacks the den
             # option, so test the input first or that case would be
             # mislabeled as unreachable-config (the eval-only callers — the
@@ -115,7 +119,8 @@ let
                     {
                       classes = builtins.attrNames (config.den.classes or { });
                     };
-              };
+              }
+          );
         };
 
       wrapModule = module: {
