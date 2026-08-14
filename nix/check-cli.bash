@@ -25,9 +25,15 @@ exit mapping, never the findings.
 Exit codes:
   0   Analysis completed, nothing blocking (clean, advisory-only, or --draft)
   1   Gating findings under --gate
-  2   Analysis failure (eval error, not a Den flake, unsupported den)
+  2   Analysis failure (eval error, not a Den flake, unsupported den).
+      Exit-2 stderr carries stable den-lsp:-prefixed reason lines
+      (the R4 vocabulary) that scripts may match.
   3   Evaluation timed out
   64  Usage error (missing path, unknown flag, --draft and --gate together)
+
+The <path> argument must not contain whitespace or the flake-ref
+reserved characters # and ?; Nix cannot encode those in a flake
+reference.
 EOF
 }
 
@@ -130,9 +136,22 @@ if [ ! -d "${target}" ]; then
 fi
 
 abs_target="$(realpath "${target}")"
+export DEN_LSP_TARGET="${abs_target}"
 
+cmd_pid=""
 workdir="$(mktemp -d)"
-trap 'rm -rf "${workdir}"' EXIT
+# shellcheck disable=SC2329  # invoked via the EXIT trap below
+cleanup() {
+  if [ -n "${cmd_pid:-}" ]; then
+    kill "${cmd_pid}" 2>/dev/null || true
+    sleep 1
+    kill -9 "${cmd_pid}" 2>/dev/null || true
+    wait "${cmd_pid}" 2>/dev/null || true
+    cmd_pid=""
+  fi
+  rm -rf "${workdir}"
+}
+trap cleanup EXIT
 doc_json="${workdir}/document.json"
 eval_err="${workdir}/eval.err"
 outcome_json="${workdir}/outcome.json"
@@ -163,7 +182,7 @@ run_bounded() {
     return 0
   fi
   "$@" >"${out_file}" 2>"${err_file}" &
-  local cmd_pid=$!
+  cmd_pid=$!
   local elapsed=0
   while kill -0 "${cmd_pid}" 2>/dev/null; do
     if [ "${elapsed}" -ge "${rem}" ]; then
@@ -171,6 +190,7 @@ run_bounded() {
       sleep 1
       kill -9 "${cmd_pid}" 2>/dev/null || true
       wait "${cmd_pid}" 2>/dev/null || true
+      cmd_pid=""
       bound_ec=124
       return 0
     fi
@@ -179,6 +199,7 @@ run_bounded() {
   done
   bound_ec=0
   wait "${cmd_pid}" || bound_ec=$?
+  cmd_pid=""
   return 0
 }
 
@@ -204,6 +225,16 @@ fail_eval() {
   exit 2
 }
 
+# Nix flake refs cannot encode whitespace or # / ? in the directory path
+# (quoted path: scheme still parses as a URL). Fail clearly instead of a
+# confusing nix error.
+case "${abs_target}" in
+  *[[:space:]]* | *'#'* | *'?'*)
+    printf '%s\n' "den-lsp: target path cannot contain whitespace or flake-ref reserved characters (#, ?)" >"${eval_err}"
+    fail_eval "${eval_err}"
+    ;;
+esac
+
 eval_document() {
   run_bounded "${doc_json}" "${eval_err}" nix eval --json --no-write-lock-file \
     "${abs_target}#den-lsp-analysis" "$@"
@@ -221,7 +252,13 @@ elif [ "${bound_ec}" -eq 0 ]; then
 else
   kind="$(classify_eval_err "$(cat "${eval_err}")")"
   if [ "${kind}" = "missing-attr" ]; then
-    system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+    run_bounded "${workdir}/system.out" "${eval_err}" nix eval --impure --raw --expr builtins.currentSystem
+    if [ "${bound_ec}" -eq 124 ]; then
+      emit_timeout
+    elif [ "${bound_ec}" -ne 0 ]; then
+      fail_eval "${eval_err}"
+    fi
+    system="$(cat "${workdir}/system.out")"
     run_bounded "${doc_json}" "${eval_err}" nix eval --json --no-write-lock-file \
       "${abs_target}#checks.${system}.den-lsp.passthru.analysis" \
       --override-input den-lsp "${DEN_LSP_SRC}"
@@ -245,7 +282,7 @@ fi
 
 if [ "${kind}" = "unwired" ]; then
   run_bounded "${workdir}/preflight.out" "${eval_err}" nix eval --impure --expr \
-    "import ${EPHEMERAL} { target = ${abs_target}; }"
+    "import ${EPHEMERAL} { target = /. + builtins.getEnv \"DEN_LSP_TARGET\"; }"
   if [ "${bound_ec}" -eq 124 ]; then
     emit_timeout
   elif [ "${bound_ec}" -ne 0 ]; then
@@ -272,9 +309,19 @@ elif [ "${bound_ec}" -ne 0 ]; then
   fail_eval "${eval_err}"
 fi
 
-text="$(jq -r .text "${outcome_json}")"
-mapped_exit="$(jq -r .exitCode "${outcome_json}")"
-notice="$(jq -r .gatingNotice "${outcome_json}")"
+if ! text="$(jq -r .text "${outcome_json}")" \
+  || ! mapped_exit="$(jq -r .exitCode "${outcome_json}")" \
+  || ! notice="$(jq -r .gatingNotice "${outcome_json}")"; then
+  printf '%s\n' "den-lsp: corrupted outcome JSON" >"${eval_err}"
+  fail_eval "${eval_err}"
+fi
+case "${mapped_exit}" in
+  0 | 1) ;;
+  *)
+    printf '%s\n' "den-lsp: corrupted outcome exitCode '${mapped_exit}'" >"${eval_err}"
+    fail_eval "${eval_err}"
+    ;;
+esac
 if [ -z "${notice}" ] || [ "${notice}" = "null" ]; then
   notice="${DEFAULT_GATING_NOTICE}"
 fi
