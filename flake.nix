@@ -33,6 +33,10 @@
           den-lsp = inputs.self.flakeModules.default;
           noflake = import ./nix/check-noflake.nix { den-lsp = inputs.self; };
         };
+
+        # Zero-touch wrapper (KTD1a). Preflight: import ./nix/ephemeral.nix { target = ./path; }.
+        # Analyze: nix eval path:<consumer>#den-lsp-analysis --override-input flake-parts path:./nix
+        ephemeral = import ./nix/ephemeral.nix;
       };
     };
 }
