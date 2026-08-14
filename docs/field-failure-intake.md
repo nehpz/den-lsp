@@ -24,7 +24,7 @@ Map the minimized failure to one **CONCEPTS.md** failure class and its destinati
 
 | Failure class | Destination tier | Corpus location |
 |---|---|---|
-| **engine crash** | **Evidence Kernel** hermetic tier | `fixtures/` consumer fixture or `fixtures/scenarios/<name>/` checked by `nix flake check "path:fixtures/scenarios"` |
+| **engine crash** | **Evidence Kernel** hermetic tier | `fixtures/` consumer fixture or `fixtures/scenarios/<name>/` checked by `nix flake check "path:fixtures/scenarios" --override-input den-lsp "$PWD"` (the override points the tier at the working tree — see fixtures/scenarios/README.md) |
 | **hang** | hermetic tier | same |
 | **timeout** | hermetic tier | same |
 | **wrong finding** | goldenable **Scenario** (hermetic tier checks `expectedFindings` / `expectedError`; agent arm optional) | `fixtures/scenarios/<name>/` |
