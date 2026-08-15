@@ -12,7 +12,7 @@ Each benchmark scenario lives in a subdirectory under `fixtures/scenarios/<name>
 - `eval-error`: Defect causes Nix evaluation to fail. Expected error substring declared via `expectedError`.
 
 ## Manifest Field Schema
-Validation rules enforced by `validateScenario` (`fixtures/scenarios/lib.nix`):
+Authoring contract for `scenario.nix` (the loader applies defaults for `knownMiss`, `heavy`, `complete`, and `exclusionReason`; malformed manifests fail at eval):
 
 - `version` (Integer, Required): Must equal `1`.
 - `name` (String, Required): Non-empty string; matches directory name.
