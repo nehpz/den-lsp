@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IN_FILE="./evidence-metrics.jsonl"
-OUT_FILE=""
 
 usage() {
   cat <<EOF
@@ -11,7 +9,6 @@ Usage: report.bash [options]
 
 Options:
   --in <file>    Metrics JSON-lines input file (default: ./evidence-metrics.jsonl)
-  --out <file>   Optional output markdown file
   --help, -h     Show this help message
 EOF
 }
@@ -20,10 +17,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --in)
       IN_FILE="$2"
-      shift 2
-      ;;
-    --out)
-      OUT_FILE="$2"
       shift 2
       ;;
     --help|-h)
@@ -195,11 +188,6 @@ READOUT="$(jq -r -R -n '
 ' "$IN_FILE")"
 
 printf "%s\n" "$READOUT"
-
-if [ -n "$OUT_FILE" ]; then
-  mkdir -p "$(dirname "$OUT_FILE")"
-  printf "%s\n" "$READOUT" > "$OUT_FILE"
-fi
 
 # A NO-GO readout is a failed gate: exit nonzero so CI steps and scripts
 # that run this as a check actually block on the verdict.
