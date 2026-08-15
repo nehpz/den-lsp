@@ -83,7 +83,10 @@ run_cli() {
 }
 
 # assert_check TITLE PASS_MSG FAIL_MSG PRED [--note LINE]... [--cli args... | -- cmd...]
-# FAIL_MSG is eval'd after the command so ${exit_code}/${CLI_EC} interpolate.
+# FAIL_MSG is printed after the command. Single-quoted ${exit_code}/${CLI_EC}
+# templates expand as data (not eval'd as shell) so parentheses cannot be
+# parsed as syntax. Command substitutions are not executed — compute those
+# fail_msgs at the callsite after the command.
 # With -- or --cli, prints TITLE then runs the command. Without, TITLE is not
 # reprinted (caller already printed it) and existing output/exit_code/CLI_* are used.
 # Optional ASSERT_FAIL_BODY is eval'd on failure instead of the default dump.
@@ -128,7 +131,14 @@ assert_check() {
     echo "PASS: ${pass_msg}"
   else
     echo -n "FAIL: "
-    eval echo "$fail_msg"
+    # Delayed ${var} templates from single-quoted callsites; values are data.
+    fail_msg="${fail_msg//\$\{exit_code\}/${exit_code-}}"
+    fail_msg="${fail_msg//\$\{CLI_EC\}/${CLI_EC-}}"
+    fail_msg="${fail_msg//\$\{inline_ec\}/${inline_ec-}}"
+    fail_msg="${fail_msg//\$\{module_ec\}/${module_ec-}}"
+    fail_msg="${fail_msg//\$\{wired_pin_ec\}/${wired_pin_ec-}}"
+    fail_msg="${fail_msg//\$\{first_ec\}/${first_ec-}}"
+    printf '%s\n' "$fail_msg"
     eval "${dump}"
     FAILED=1
   fi
@@ -164,7 +174,7 @@ assert_check \
 assert_check \
   "gating-dup variant" \
   "gating-dup (exit nonzero and mentioned both 'web' and 'db')" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "gating-dup expected nonzero exit code but got 0"; else echo "gating-dup exited nonzero but output did not mention both aspect names '\''web'\'' and '\''db'\''"; fi)' \
+  'gating-dup expected nonzero exit mentioning both web and db (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "web" && echo "${output}" | grep -q "db"' \
   --note "    (expected failure: the 'den-lsp-check' build below fails by design;" \
   --note "     it reappears in the post-job 'Build logs from 1 failure' summary)" \
@@ -184,7 +194,7 @@ assert_check \
 assert_check \
   "broken variant" \
   "broken (exit nonzero and output referenced failing file trigger.nix)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "broken expected exit code nonzero but got 0"; else echo "broken exited nonzero but output did not reference failing file trigger.nix"; fi)' \
+  'broken expected nonzero exit referencing trigger.nix (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "trigger.nix"' \
   -- nix build "${WS_BROKEN}#checks.${SYSTEM}.den-lsp" \
   --no-link \
@@ -250,7 +260,7 @@ rm -f "${gdup_err}"
 assert_check \
   "unwired advisory-only variant" \
   "unwired advisory-only (exit 0, advisory findings, no gating)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired advisory-only document was not advisory-only"; else echo "unwired advisory-only expected exit 0 but got ${exit_code}"; fi)' \
+  'unwired advisory-only expected exit 0 with an advisory-only document (got exit ${exit_code})' \
   '[ "${exit_code}" -eq 0 ] && echo "${output}" | grep -q '\''"advisory"'\'' && echo "${output}" | grep -q '\''"gating":0'\''' \
   -- nix eval --json "${UNWIRED_ADVISORY}#den-lsp-analysis" \
   "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}"
@@ -258,7 +268,7 @@ assert_check \
 assert_check \
   "unwired broken variant" \
   "unwired broken (exit nonzero and output referenced failing file trigger.nix)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired broken expected exit code nonzero but got 0"; else echo "unwired broken exited nonzero but output did not reference failing file trigger.nix"; fi)' \
+  'unwired broken expected nonzero exit referencing trigger.nix (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "trigger.nix"' \
   -- nix eval --json "${UNWIRED_BROKEN}#den-lsp-analysis" \
   "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}"
@@ -281,35 +291,35 @@ assert_check \
 assert_check \
   "unwired R4: no flake-parts input" \
   "unwired no-flake-parts (named error)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired no-flake-parts expected nonzero exit but got 0"; else echo "unwired no-flake-parts exited nonzero but message did not name missing flake-parts"; fi)' \
+  'unwired no-flake-parts expected nonzero exit naming missing flake-parts (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "no flake-parts input"' \
   -- preflight_unwired "${REPO_DIR}/fixtures/unwired/no-flake-parts"
 
 assert_check \
   "unwired R4: flake-parts under a nonstandard input name" \
   "unwired renamed-flake-parts (named error)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired renamed-flake-parts expected nonzero exit but got 0"; else echo "unwired renamed-flake-parts exited nonzero but message did not name nonstandard input"; fi)' \
+  'unwired renamed-flake-parts expected nonzero exit naming the nonstandard input (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "nonstandard input name"' \
   -- preflight_unwired "${REPO_DIR}/fixtures/unwired/renamed-flake-parts"
 
 assert_check \
   "unwired R4: no den input" \
   "unwired no-den (named error)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired no-den expected nonzero exit but got 0"; else echo "unwired no-den exited nonzero but message did not name missing den"; fi)' \
+  'unwired no-den expected nonzero exit naming missing den (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "no den input"' \
   -- preflight_unwired "${REPO_DIR}/fixtures/unwired/no-den"
 
 assert_check \
   "unwired R4: den below v0.18.0 floor" \
   "unwired old-den (named version-floor error)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired old-den expected nonzero exit but got 0"; else echo "unwired old-den exited nonzero but message did not name the v0.18.0 floor"; fi)' \
+  'unwired old-den expected nonzero exit naming the v0.18.0 floor (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "v0.18.0"' \
   -- preflight_unwired "${REPO_DIR}/fixtures/unwired/old-den"
 
 assert_check \
   "unwired R4: den config unreachable" \
   "unwired unreachable (named error)" \
-  '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired unreachable expected nonzero exit but got 0"; else echo "unwired unreachable exited nonzero but message did not name unreachability"; fi)' \
+  'unwired unreachable expected nonzero exit naming unreachability (got exit ${exit_code})' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "unreachable"' \
   -- nix eval --json "${REPO_DIR}/fixtures/unwired/unreachable#den-lsp-analysis" \
   "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}"
