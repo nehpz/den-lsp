@@ -99,7 +99,7 @@ den-lsp's only entry today is a two-step committed wiring: add a flake input, im
 - `CONCEPTS.md` — Field-Failure Intake taxonomy (hangs/timeouts → hermetic fixtures; repair defects → goldenable scenarios), gating/advisory semantics.
 - den v0.18.0 source, `nix/lib/namespace.nix` — den exports only the `denful` namespace as a flake output, never full `config.den`; reading a stock consumer's outputs cannot reach the aspect graph. This forces re-entering the consumer's evaluation (KTD1).
 - `fixtures/scenarios/flake.nix` — proves `flake-parts.lib.evalFlakeModule` can compose den + den-lsp modules around an external workspace (KTD1 candidate c).
-- The 2026-08-07 evidence-kernel GO readout. Scope provenance: zero-touch injection and the runtime CLI were parked by the PR #9 real-user audit (PR-topology convention above); un-parked by the user's Focus 2 directive in this planning session, after that readout.
+- The 2026-08-07 evidence-kernel GO readout (session-only artifact; not retained in-tree and not independently retrievable from the repository). Scope provenance: zero-touch injection and the runtime CLI were parked by the PR #9 real-user audit (PR-topology convention above); un-parked by the user's Focus 2 directive in this planning session, after that readout.
 
 ---
 
