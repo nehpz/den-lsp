@@ -50,6 +50,10 @@ let
         (loaded.kind or "") == "finding" && !loaded.knownMiss && (loaded.expectedFindings or [ ]) == [ ]
       then
         throw "Scenario '${name}' of kind 'finding' with knownMiss=false must declare at least one expected finding - an empty list would make its detection check pass vacuously"
+      else if
+        (loaded.kind or "") == "eval-error" && !loaded.knownMiss && (loaded.expectedError or "") == ""
+      then
+        throw "Scenario '${name}' of kind 'eval-error' with knownMiss=false must declare a non-empty expectedError - an empty string would match any output vacuously"
       else
         loaded
     else

@@ -28,6 +28,12 @@ let
   emptyExpectedNonMissRejected =
     !(builtins.tryEval (libScenarios.loadScenarioFile ../fixtures/vacuous-finding-scenario.nix))
     .success;
+
+  # Same vacuity class for eval-error scenarios: an empty expectedError would
+  # match any output; the loader must reject it.
+  emptyExpectedErrorNonMissRejected =
+    !(builtins.tryEval (libScenarios.loadScenarioFile ../fixtures/vacuous-eval-error-scenario.nix))
+    .success;
 in
 {
   scenario-loader-valid-manifests-load = validManifestsLoad;
@@ -35,4 +41,5 @@ in
   scenario-loader-known-miss-allowed = knownMissAllowed;
   scenario-loader-incomplete-excluded = incompleteExcluded;
   scenario-loader-empty-expected-non-miss-rejected = emptyExpectedNonMissRejected;
+  scenario-loader-empty-expected-error-non-miss-rejected = emptyExpectedErrorNonMissRejected;
 }
