@@ -94,8 +94,14 @@ else
   FAILED=1
 fi
 
-# Run gating-dup variant
+# Run gating-dup variant. This negative test intentionally fails a
+# 'den-lsp-check' derivation build to prove the CI gate blocks gating
+# findings — the failed drv is why green runs still show a red
+# "Build logs from 1 failure" block in the Determinate nix action's
+# post-job summary.
 echo "==> Testing gating-dup variant..."
+echo "    (expected failure: the 'den-lsp-check' build below fails by design;"
+echo "     it reappears in the post-job 'Build logs from 1 failure' summary)"
 set +e
 output=$(nix build "${REPO_DIR}/fixtures/consumer-variants/gating-dup#checks.${SYSTEM}.den-lsp" \
   --no-link \
