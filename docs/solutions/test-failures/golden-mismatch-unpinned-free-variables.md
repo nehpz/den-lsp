@@ -21,18 +21,18 @@ tags: [agent-eval, golden-comparison, task-prompts, measurement-validity, golden
 
 In `den-lsp`'s agent-evaluation harness ("evidence kernel", located in `tools/evidence-runner/`), an agent's repair is judged by comparing the repaired workspace's normalized evaluated output against a per-scenario golden workspace using structural JSON equality (design decision **KTD6** in `docs/plans/2026-08-03-001-feat-evidence-kernel-plan.md:178`). This outcome-equality design decision (**KD3**, `docs/plans/2026-08-03-001-feat-evidence-kernel-plan.md:42`) was chosen over simple "finding silenced" checks to ensure that deleting a flagged configuration does not masquerade as a valid repair (**AE1**, `docs/plans/2026-08-03-001-feat-evidence-kernel-plan.md:110`).
 
-However, during the first automated agent evaluation sweep (`google-antigravity/gemini-3.6-flash`), the harness reported a repair success rate of only 4/8 (50%), recorded in `runs/2026-08-07/evidence-metrics.jsonl`. A second model (`claude-haiku-4-5`) had already failed all three pre-fix smoke attempts on `base-gating-dup` the same way. Upon manual transcript reconstruction and JSON diffing, every single failure was revealed to be a false negative (`verdictReason: "golden_mismatch"`). The agents had produced semantically and materially correct repairs, but because the scenario task prompts left entity names or attribute shapes unconstrained as free variables, the agents chose valid identifiers (e.g., naming an extracted aspect `'common'` or `'openssh'` instead of `'shared-openssh'`) or clean structural variants (e.g., `{ nixos = { }; }` instead of `{ }`) that differed from the golden files. Additionally, one golden workspace contained an unprompted description edit that no task prompt requested.
+However, during the first automated agent evaluation sweep (`google-antigravity/gemini-3.6-flash`), the harness reported a repair success rate of only 4/8 (50%), recorded in the initial 2026-08-07 evidence-metrics sweep. A second model (`claude-haiku-4-5`) had already failed all three pre-fix smoke attempts on `base-gating-dup` the same way. Upon manual transcript reconstruction and JSON diffing, every single failure was revealed to be a false negative (`verdictReason: "golden_mismatch"`). The agents had produced semantically and materially correct repairs, but because the scenario task prompts left entity names or attribute shapes unconstrained as free variables, the agents chose valid identifiers (e.g., naming an extracted aspect `'common'` or `'openssh'` instead of `'shared-openssh'`) or clean structural variants (e.g., `{ nixos = { }; }` instead of `{ }`) that differed from the golden files. Additionally, one golden workspace contained an unprompted description edit that no task prompt requested.
 
 Because the comparator's equivalence boundary enforced literal key equality for user-defined identifiers, these valid repairs were flagged as mismatches. The R4 "goldenability gate" (**R4**, `docs/plans/2026-08-03-001-feat-evidence-kernel-plan.md:59`), which dictates that ambiguous scenarios must be excluded or disambiguated, failed to catch these unpinned free variables during initial scenario authoring.
 
 ## Symptoms
 
-During evaluation runs recorded in `runs/2026-08-07/evidence-metrics.jsonl`, 4 out of 8 clear-cut scenarios failed with `verdictReason: "golden_mismatch"`:
+During the initial 2026-08-07 evidence-metrics sweep, 4 out of 8 clear-cut scenarios failed with `verdictReason: "golden_mismatch"`:
 
-- `base-advisory-only`: `repaired: false`, `verdictReason: "golden_mismatch"` (`runs/2026-08-07/evidence-metrics.jsonl:2`)
-- `base-gating-dup`: `repaired: false`, `verdictReason: "golden_mismatch"` (`runs/2026-08-07/evidence-metrics.jsonl:4`)
-- `field-wrapper-masking`: `repaired: false`, `verdictReason: "golden_mismatch"` (`runs/2026-08-07/evidence-metrics.jsonl:5`)
-- `rule-class-quirk-collision`: `repaired: false`, `verdictReason: "golden_mismatch"` (`runs/2026-08-07/evidence-metrics.jsonl:7`)
+- `base-advisory-only`: `repaired: false`, `verdictReason: "golden_mismatch"`
+- `base-gating-dup`: `repaired: false`, `verdictReason: "golden_mismatch"`
+- `field-wrapper-masking`: `repaired: false`, `verdictReason: "golden_mismatch"`
+- `rule-class-quirk-collision`: `repaired: false`, `verdictReason: "golden_mismatch"`
 
 In all four cases:
 1. `detected` was `true` and `precise` was `true`.
@@ -115,8 +115,8 @@ description = "Colliding quirk name";
 
 Following commit `42b1447`:
 
-- **Gemini 3.6 Flash (`google-antigravity/gemini-3.6-flash`):** Repair success rate rose from **4/8 (50%)** in `runs/2026-08-07/evidence-metrics.jsonl` to **8/8 (100%)** in `runs/2026-08-07/evidence-metrics-2.jsonl` and `runs/2026-08-07/readout.md:14`.
-- **Claude Haiku 4.5 (`haiku`):** Went from failing every pre-fix attempt on `base-gating-dup` to passing it. The post-fix sweep (`runs/2026-08-07/evidence-metrics-haiku.jsonl`) records **6/8** because it ran before the `base-broken` prompt pin landed; after that pin, a single-scenario re-run of `base-broken` passed (session-verified; not retained as a committed metrics file), leaving `field-wrapper-masking` as the only failure (effective **7/8**). Per session triage of the retained transcript (`runs/2026-08-07/evidence-metrics-haiku-artifacts/`, untracked), that remaining failure is a genuine model capability defect — the agent attached the shared aspect to the host's includes rather than the duplicating aspects — not a harness artifact.
+- **Gemini 3.6 Flash (`google-antigravity/gemini-3.6-flash`):** Repair success rate rose from **4/8 (50%)** on the initial 2026-08-07 sweep to **8/8 (100%)** on the post-fix sweep and GO readout.
+- **Claude Haiku 4.5 (`haiku`):** Went from failing every pre-fix attempt on `base-gating-dup` to passing it. The post-fix Haiku sweep records **6/8** because it ran before the `base-broken` prompt pin landed; after that pin, a single-scenario re-run of `base-broken` passed (session-verified; not retained as a committed metrics file), leaving `field-wrapper-masking` as the only failure (effective **7/8**). Per session triage of the retained transcript, that remaining failure is a genuine model capability defect — the agent attached the shared aspect to the host's includes rather than the duplicating aspects — not a harness artifact.
 
 ## Why This Works
 
@@ -148,11 +148,7 @@ When authoring or maintaining agent-evaluation scenarios judged by outcome equal
 - **Commit:** `42b1447` ("fix(scenarios): pin agent-chosen names and repair shapes in task prompts") on branch `feat/evidence-omp-adapter`
 - **Design Plan:** `docs/plans/2026-08-03-001-feat-evidence-kernel-plan.md` (Design decisions **KD3**, **KTD6**, **R4**, **R7**, **AE1**, **AE2**)
 - **Harness Comparator:** `tools/evidence-runner/compare.bash:72-161`
-- **Evaluation Runs & Metrics:**
-  - `runs/2026-08-07/evidence-metrics.jsonl` (Initial 4/8 sweep)
-  - `runs/2026-08-07/evidence-metrics-2.jsonl` (Post-fix 8/8 sweep)
-  - `runs/2026-08-07/evidence-metrics-haiku.jsonl` (Haiku sweep, 6/8 — ran before the base-broken pin; base-broken passed a pinned re-run)
-  - `runs/2026-08-07/readout.md` (Go/No-Go Readout)
+- **Evaluation Runs & Metrics:** 2026-08-07 evidence-kernel sweeps (initial 4/8, post-fix 8/8, Haiku 6/8 before the base-broken pin) and the GO readout; artifacts were not retained in-tree.
 - **Scenario Contract:** `fixtures/scenarios/README.md` (manifest fields `task`, `goldenable`, `exclusionReason` — the authoring surface this learning constrains)
 - **Strategy Metrics:** `STRATEGY.md` (successful-repair-rate metric this false negative distorted)
 - **PR:** [#1 — evidence kernel](https://github.com/nehpz/den-lsp/pull/1) (merged; introduced the scenario corpus and comparator this learning corrects)

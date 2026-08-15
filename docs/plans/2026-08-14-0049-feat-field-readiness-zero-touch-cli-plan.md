@@ -99,7 +99,7 @@ den-lsp's only entry today is a two-step committed wiring: add a flake input, im
 - `CONCEPTS.md` — Field-Failure Intake taxonomy (hangs/timeouts → hermetic fixtures; repair defects → goldenable scenarios), gating/advisory semantics.
 - den v0.18.0 source, `nix/lib/namespace.nix` — den exports only the `denful` namespace as a flake output, never full `config.den`; reading a stock consumer's outputs cannot reach the aspect graph. This forces re-entering the consumer's evaluation (KTD1).
 - `fixtures/scenarios/flake.nix` — proves `flake-parts.lib.evalFlakeModule` can compose den + den-lsp modules around an external workspace (KTD1 candidate c).
-- `runs/2026-08-07/` — the evidence kernel's GO readout. Scope provenance: zero-touch injection and the runtime CLI were parked by the PR #9 real-user audit (PR-topology convention above); un-parked by the user's Focus 2 directive in this planning session, after that readout.
+- The 2026-08-07 evidence-kernel GO readout. Scope provenance: zero-touch injection and the runtime CLI were parked by the PR #9 real-user audit (PR-topology convention above); un-parked by the user's Focus 2 directive in this planning session, after that readout.
 
 ---
 
@@ -181,7 +181,7 @@ U1 gates U2 and U4. U3 extends U2. U5 verifies U2+U3. U6 and U7 are independent 
   3. Add an explicit den version-floor gate in `nix/ephemeral.nix` — no version check exists anywhere under `nix/` today, and the entity-mode throw in `nix/den-analysis.nix` is never hit in fleet mode — failing with a message that names the v0.18.0 floor, asserted by a fixture row.
   4. Route unanalyzable targets to distinct, message-bearing errors: no `flake-parts` input, flake-parts present under a nonstandard input name, no den, den < v0.18.0, and den config unreachable by the winning variant.
 - **Execution note:** Verification-first — the mechanism decision is settled by making the unwired fixture produce the same findings the wired fixture produces. Delete losing-variant code before the PR (KTD7).
-- **Patterns to follow:** `fixtures/scenarios/flake.nix` (`evalFlakeModule` composition, explicit `systems`), `nix/inject-analysis.nix` (`mkDefault` injection).
+- **Patterns to follow:** `fixtures/scenarios/flake.nix` (`evalFlakeModule` composition, explicit `systems`), `nix/check.nix` (`mkDefault` injection).
 - **Test scenarios:**
   - Covers AE1 (mechanism half). Unwired fixture evaluates to a document whose findings equal the wired `fixtures/consumer` document's findings.
   - Unwired fixture with a seeded gating defect yields that gating finding.
