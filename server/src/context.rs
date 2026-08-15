@@ -6,7 +6,10 @@ pub enum BufferContext {
     None,
 }
 
-/// Simple static text heuristic scanning backwards from cursor (line_idx, col_idx).
+/// Simple static text heuristic scanning backwards from cursor.
+///
+/// `col_idx` is an LSP `Position.character`: UTF-16 code units into the line,
+/// not a byte offset.
 pub fn determine_context(buffer: &str, line_idx: usize, col_idx: usize) -> BufferContext {
     let lines: Vec<&str> = buffer.lines().collect();
     if line_idx >= lines.len() {
@@ -14,7 +17,19 @@ pub fn determine_context(buffer: &str, line_idx: usize, col_idx: usize) -> Buffe
     }
 
     let current_line = lines[line_idx];
-    let end_col = col_idx.min(current_line.len());
+    // Convert the UTF-16 column to a byte index so the prefix slice is a
+    // valid char boundary. Walk chars, accumulating `len_utf16`, and stop at
+    // the first char whose cumulative UTF-16 offset has reached `col_idx`.
+    // Past-the-end columns clamp to the line length.
+    let mut utf16_acc = 0;
+    let mut end_col = current_line.len();
+    for (byte_idx, ch) in current_line.char_indices() {
+        if utf16_acc >= col_idx {
+            end_col = byte_idx;
+            break;
+        }
+        utf16_acc += ch.len_utf16();
+    }
 
     // Scan backwards line by line from current line, using slices (current
     // line truncated at the cursor) instead of allocating owned prefix strings.
@@ -110,5 +125,35 @@ mod tests {
   foo = 123;
 }"#;
         assert_eq!(determine_context(none_buf, 1, 4), BufferContext::None);
+    }
+
+    #[test]
+    fn test_context_utf16_column_after_non_ascii() {
+        // "é" is 1 UTF-16 code unit and 2 UTF-8 bytes. Slicing the line at the
+        // LSP column as if it were a byte index lands mid-character and panics.
+        let buf = r#"{
+  den.aspects.igloo = {
+    includes = [
+      "café"
+    ];
+  };
+}"#;
+        // Cursor on the closing quote, after é, still inside the includes list.
+        let col = "      \"café".encode_utf16().count();
+        assert_eq!(
+            determine_context(buf, 3, col),
+            BufferContext::InIncludesList
+        );
+    }
+
+    #[test]
+    fn test_context_ascii_mid_line_column_unchanged() {
+        let buf = r#"{
+  den.aspects.igloo = {
+    nixos = { };
+  };
+}"#;
+        // ASCII line: UTF-16 offset equals byte offset; mid-line cursor is unchanged.
+        assert_eq!(determine_context(buf, 2, 4), BufferContext::AtAspectKey);
     }
 }
