@@ -192,8 +192,15 @@ pub fn parse_nix_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
         stderr.trim().to_string()
     };
 
-    // `at <path>:<line>` (optional `:<col>` and trailing `:`), last occurrence.
-    let position = stderr.rfind("at ").and_then(|idx| {
+    // `at <path>:<line>` (optional `:<col>` and trailing `:`). Nix prints the
+    // real error location first; later `at` frames are outer call sites. Scan
+    // forward (same first-match semantics as the former `at\s+…` regex),
+    // require a word boundary so English "that " is not a hit, and keep
+    // scanning past occurrences whose following token is not `<path>:<line>`.
+    let position = stderr.match_indices("at ").find_map(|(idx, _)| {
+        if idx > 0 && !stderr[..idx].ends_with(|c: char| c.is_whitespace()) {
+            return None;
+        }
         let spec = stderr[idx + 3..].split_whitespace().next()?;
         let spec = spec.trim_end_matches(':');
         let (file, rest) = spec.split_once(':')?;
@@ -428,6 +435,46 @@ mod tests {
     use crate::inventory::{Finding, Inventory};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, MutexGuard};
+
+    // --- parse_nix_stderr ---
+
+    #[test]
+    fn parse_nix_stderr_first_valid_location_wins_over_later_frame() {
+        let stderr = "\
+error: undefined variable 'foo'
+
+       at /workspace/modules/aspect.nix:15:2:
+
+       14|   something
+       15|   foo
+         |   ^
+
+       at /nix/store/abc123-nixpkgs/lib/trivial.nix:42:1:
+";
+        let (block, pos) = parse_nix_stderr(stderr);
+        assert!(block.contains("undefined variable"));
+        assert_eq!(
+            pos,
+            Some(("/workspace/modules/aspect.nix".to_string(), 15))
+        );
+    }
+
+    #[test]
+    fn parse_nix_stderr_skips_trailing_english_at_and_finds_earlier_location() {
+        let stderr = "\
+error: undefined variable 'foo'
+       at /workspace/foo.nix:12:1:
+       evaluation aborted at the call site
+";
+        let (_, pos) = parse_nix_stderr(stderr);
+        assert_eq!(pos, Some(("/workspace/foo.nix".to_string(), 12)));
+    }
+
+    #[test]
+    fn parse_nix_stderr_that_is_not_a_location() {
+        let (_, pos) = parse_nix_stderr("that /foo:12");
+        assert_eq!(pos, None);
+    }
 
     pub struct DropGuard {
         pub counter: Arc<AtomicUsize>,
