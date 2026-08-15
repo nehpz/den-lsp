@@ -219,7 +219,8 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let line = lines[pos.line as usize];
-        let col = pos.character as usize;
+        // Position.character is UTF-16; convert to a byte index before slicing.
+        let col = crate::context::utf16_col_to_byte_idx(line, pos.character as usize);
         if col >= line.len() {
             return Ok(None);
         }

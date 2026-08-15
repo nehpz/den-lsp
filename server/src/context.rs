@@ -6,6 +6,19 @@ pub enum BufferContext {
     None,
 }
 
+/// Convert an LSP `Position.character` (UTF-16 code units) into a byte index
+/// on `line`, clamped to the line length, always landing on a char boundary.
+pub fn utf16_col_to_byte_idx(line: &str, col: usize) -> usize {
+    let mut utf16_acc = 0;
+    for (byte_idx, ch) in line.char_indices() {
+        if utf16_acc >= col {
+            return byte_idx;
+        }
+        utf16_acc += ch.len_utf16();
+    }
+    line.len()
+}
+
 /// Simple static text heuristic scanning backwards from cursor.
 ///
 /// `col_idx` is an LSP `Position.character`: UTF-16 code units into the line,
@@ -17,19 +30,7 @@ pub fn determine_context(buffer: &str, line_idx: usize, col_idx: usize) -> Buffe
     }
 
     let current_line = lines[line_idx];
-    // Convert the UTF-16 column to a byte index so the prefix slice is a
-    // valid char boundary. Walk chars, accumulating `len_utf16`, and stop at
-    // the first char whose cumulative UTF-16 offset has reached `col_idx`.
-    // Past-the-end columns clamp to the line length.
-    let mut utf16_acc = 0;
-    let mut end_col = current_line.len();
-    for (byte_idx, ch) in current_line.char_indices() {
-        if utf16_acc >= col_idx {
-            end_col = byte_idx;
-            break;
-        }
-        utf16_acc += ch.len_utf16();
-    }
+    let end_col = utf16_col_to_byte_idx(current_line, col_idx);
 
     // Scan backwards line by line from current line, using slices (current
     // line truncated at the cursor) instead of allocating owned prefix strings.
@@ -155,5 +156,21 @@ mod tests {
 }"#;
         // ASCII line: UTF-16 offset equals byte offset; mid-line cursor is unchanged.
         assert_eq!(determine_context(buf, 2, 4), BufferContext::AtAspectKey);
+    }
+
+    #[test]
+    fn test_utf16_col_to_byte_idx_boundaries() {
+        // "🦀" is 2 UTF-16 code units and 4 UTF-8 bytes; "é" is 1 and 2.
+        let line = "a🦀é-word";
+        // Every returned index must be a char boundary (slicing must not panic).
+        for col in 0..=line.encode_utf16().count() + 2 {
+            let idx = utf16_col_to_byte_idx(line, col);
+            let _ = &line[..idx];
+        }
+        assert_eq!(utf16_col_to_byte_idx(line, 0), 0);
+        assert_eq!(utf16_col_to_byte_idx(line, 1), 1); // after 'a'
+        assert_eq!(utf16_col_to_byte_idx(line, 3), 5); // after the 2-unit crab
+        assert_eq!(utf16_col_to_byte_idx(line, 4), 7); // after 'é'
+        assert_eq!(utf16_col_to_byte_idx(line, 99), line.len()); // clamped
     }
 }
