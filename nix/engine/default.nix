@@ -8,6 +8,9 @@ let
   document = import ./document.nix { inherit lib; };
   render = import ./render.nix { inherit lib; };
   rules = import ./rules { inherit lib; };
+  # Function-arg `rules` shadows the let-binding, so the default cannot
+  # be `rules.default` (infinite recursion). Bind it once here.
+  defaultRules = rules.default;
 in
 {
   inherit (document) version mkDocument;
@@ -17,7 +20,7 @@ in
   analyze =
     {
       ir,
-      rules ? (import ./rules { inherit lib; }).default,
+      rules ? defaultRules,
     }:
     document.mkDocument { inherit ir rules; };
 }

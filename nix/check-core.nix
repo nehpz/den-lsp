@@ -40,23 +40,32 @@ rec {
         0;
   };
 
-  # Module-app script body: text report on stdout; exit 0 clean/advisory,
-  # exit 1 gating. The standalone CLI reprints from outcomeFor so this
-  # stays the baked equivalent of --gate text mode.
+  # One script template for the module app and the check derivation.
+  # `report` is the store path of the rendered text. `toStderr` redirects
+  # the report (and the blank line before the notice). `onSuccess` is
+  # appended when there are no gating findings (the check copies to $out).
   textModeGateScript =
-    { report, hasGating }:
+    {
+      report,
+      hasGating,
+      toStderr ? false,
+      onSuccess ? "",
+    }:
+    let
+      redir = if toStderr then " >&2" else "";
+    in
     ''
-      cat ${report}
+      cat ${report}${redir}
     ''
     + (
       if hasGating then
         ''
-          echo
+          echo${redir}
           echo "${gatingNotice}" >&2
           exit 1
         ''
       else
-        ""
+        onSuccess
     );
 
   gateFor =
@@ -84,20 +93,14 @@ rec {
             passthru.analysis = doc;
             inherit report;
           }
-          (
-            if outcome.hasGating then
-              ''
-                cat "$report" >&2
-                echo >&2
-                echo "${gatingNotice}" >&2
-                exit 1
-              ''
-            else
-              ''
-                cat "$report"
-                cp "$report" "$out"
-              ''
-          );
+          (textModeGateScript {
+            inherit report;
+            inherit (outcome) hasGating;
+            toStderr = outcome.hasGating;
+            onSuccess = ''
+              cp ${report} "$out"
+            '';
+          });
 
       app = {
         type = "app";

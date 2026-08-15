@@ -26,11 +26,16 @@ let
     };
 in
 {
-  imports = [ ./inject-analysis.nix ];
-
   # Declare the output den-natively so den STRICT MODE (den.lib.strict on
   # den.schema.flake) accepts it.
   config = {
+    den.lib.analysis = lib.mkDefault (
+      import ./den-analysis.nix {
+        inherit (config) den;
+        inherit lib;
+      }
+    );
+
     den.schema.flake.options.den-lsp-analysis = lib.mkOption {
       type = lib.types.raw;
       description = "den-lsp analysis document (system-independent, pure eval).";

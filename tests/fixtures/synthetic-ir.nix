@@ -13,17 +13,6 @@
       name = "igloo";
       class = "nixos";
       parent = null;
-      provider = [ ];
-      excluded = false;
-      excludedFrom = null;
-      replacedBy = null;
-      isProvider = false;
-      handlers = [ ];
-      hasClass = true;
-      isParametric = false;
-      fnArgNames = [ ];
-      entityKind = "host";
-      entityInstance = "host:igloo";
     }
   ];
 

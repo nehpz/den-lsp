@@ -2,27 +2,22 @@
 # evaluation of a Den consumer config.
 #
 # This file is den-lsp's own copy of the analysis layer, injected into the
-# consumer's `den.lib.analysis` via nix/inject-analysis.nix (den.lib is a
-# freeform option, so the injection needs NO den changes and works against
-# stock den — verified back to v0.18.0, whose captureFleet already exposes
-# scopedClassImports). When den ships a native den.lib.analysis upstream,
-# the mkDefault injection yields to it automatically; keep this file in
-# sync with den nix/lib/diag/analysis.nix until then.
+# consumer's `den.lib.analysis` via nix/check.nix and nix/check-noflake.nix
+# (den.lib is a freeform option, so the injection needs NO den changes and
+# works against stock den — verified back to v0.18.0, whose captureFleet
+# already exposes scopedClassImports). When den ships a native
+# den.lib.analysis upstream, the mkDefault injection yields to it
+# automatically; keep this file in sync with den nix/lib/diag/analysis.nix
+# until then.
 #
 # Public API (den.lib.analysis):
-#   capture { classes, root ? null, ctx ? {} }
-#     root == null -> fleet mode: walks the ENTIRE flake scope tree
+#   capture { classes }
+#     Fleet mode: walks the ENTIRE flake scope tree
 #       (flake -> fleet -> environment -> host -> user) per class.
-#     root != null -> entity mode: mirrors captureWithPathsWith's calling
-#       convention for a single resolved entity root.
 #     Returns the analysis IR (see below).
 #   serialize
 #     Safe content serializer: JSON-able tree with __opaque / __truncated
 #     markers; never forces functions, derivations, or throwing values.
-#   positionsFromDefinitions
-#     [ { file, value } ] -> name -> { file, line, column } | null.
-#     Feed it option definitions (e.g. options.den.aspects.definitionsWithLocations
-#     from the consumer's module eval) to recover declaration positions.
 #
 # Analysis IR shape (version 1):
 #   {
@@ -30,7 +25,7 @@
 #     entries;      # trace entries (tracingHandler shape)
 #     ctxTrace;     # entity-kind context trace
 #     emissions;    # [ { scope; class; identity; opaque; content; } ]
-#     scopes;       # fleet mode: { parent; entityKind; contextKeys; } else { }
+#     scopes;       # { parent; entityKind; contextKeys; }
 #     registries;   # { structuralKeys; classes; quirks; batteries; aspects; }
 #     entities;     # { hosts = [ { system; name; class; users; } ]; homes; }
 #   }
@@ -264,56 +259,8 @@ let
       entities = entitiesSnapshot;
     };
 
-  captureEntityMode =
-    {
-      classes,
-      root,
-      ctx,
-    }:
-    let
-      raw = den.lib.capture.captureWithPathsWith { inherit classes root ctx; };
-      scopedClassImports =
-        raw.scopedClassImports
-          or (throw "den-lsp: entity-mode capture needs a den whose captureWithPathsWith exposes scopedClassImports (den > v0.18.0); use fleet mode (root = null), which works on stock den");
-    in
-    {
-      version = 1;
-      inherit (raw) entries ctxTrace;
-      emissions = lib.concatMap (c: emissionsFrom scopedClassImports.${c}) classes;
-      scopes = { };
-      registries = registriesSnapshot;
-      entities = entitiesSnapshot;
-    };
-
-  capture =
-    {
-      classes,
-      root ? null,
-      ctx ? { },
-    }:
-    if root == null then captureFleetMode classes else captureEntityMode { inherit classes root ctx; };
-
-  # Recover declaration positions from option definitions. Each def is
-  # { file, value }; unsafeGetAttrPos resolves the position of a statically
-  # declared attr name in that definition, null for dynamically-constructed
-  # attrs. First non-null definition wins per name.
-  positionsFromDefinitions =
-    defs:
-    lib.foldl' (
-      acc: def:
-      let
-        v = def.value or { };
-        names = if builtins.isAttrs v then builtins.attrNames v else [ ];
-        fresh = lib.genAttrs names (name: builtins.unsafeGetAttrPos name v);
-      in
-      # Keep existing non-null positions; fill gaps from this definition.
-      fresh // builtins.mapAttrs (name: pos: if pos == null then fresh.${name} or null else pos) acc
-    ) { } defs;
+  capture = { classes }: captureFleetMode classes;
 in
 {
-  inherit
-    capture
-    serialize
-    positionsFromDefinitions
-    ;
+  inherit capture serialize;
 }
