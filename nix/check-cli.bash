@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Standalone den-lsp-check body. Prefix (DEN_LSP_SRC, SHIM, EPHEMERAL,
-# OUTCOME_HELPER, DEFAULT_GATING_NOTICE) is injected by nix/check-cli.nix.
+# OUTCOME_HELPER) is injected by nix/check-cli.nix.
 
 usage() {
   cat <<'EOF'
@@ -341,12 +341,21 @@ elif [ "${bound_ec}" -ne 0 ]; then
   fail_eval "${eval_err}"
 fi
 
-if ! text="$(jq -r .text "${outcome_json}")" \
-  || ! mapped_exit="$(jq -r .exitCode "${outcome_json}")" \
-  || ! notice="$(jq -r .gatingNotice "${outcome_json}")"; then
+# .text is a multiline report, so TSV would smash embedded newlines.
+# NUL-delimited fields via jq -j; read -d '' keeps the exact strings.
+# Trailing NULs are required so the last read sees a delimiter (set -e).
+if ! {
+  IFS= read -r -d '' text &&
+    IFS= read -r -d '' mapped_exit &&
+    IFS= read -r -d '' notice
+} < <(jq -j '.text + "\u0000" + (.exitCode | tostring) + "\u0000" + .gatingNotice + "\u0000"' "${outcome_json}"); then
   printf '%s\n' "den-lsp: corrupted outcome JSON" >"${eval_err}"
   fail_eval "${eval_err}"
 fi
+# Match $(jq -r) command-substitution: drop trailing newlines, then print with one.
+while [ -n "${text}" ] && [ "${text: -1}" = $'\n' ]; do
+  text="${text%$'\n'}"
+done
 case "${mapped_exit}" in
   0 | 1) ;;
   *)
@@ -355,7 +364,8 @@ case "${mapped_exit}" in
     ;;
 esac
 if [ -z "${notice}" ] || [ "${notice}" = "null" ]; then
-  notice="${DEFAULT_GATING_NOTICE}"
+  printf '%s\n' "den-lsp: corrupted outcome JSON" >"${eval_err}"
+  fail_eval "${eval_err}"
 fi
 
 print_text_report() {
