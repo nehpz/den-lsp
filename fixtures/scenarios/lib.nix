@@ -37,13 +37,21 @@ let
       raw = import path;
     in
     if raw.complete or false then
-      raw
-      // {
-        knownMiss = raw.knownMiss or false;
-        heavy = raw.heavy or false;
-        complete = raw.complete or false;
-        exclusionReason = raw.exclusionReason or null;
-      }
+      let
+        loaded = raw // {
+          knownMiss = raw.knownMiss or false;
+          heavy = raw.heavy or false;
+          complete = raw.complete or false;
+          exclusionReason = raw.exclusionReason or null;
+        };
+        name = loaded.name or "<unknown>";
+      in
+      if
+        (loaded.kind or "") == "finding" && !loaded.knownMiss && (loaded.expectedFindings or [ ]) == [ ]
+      then
+        throw "Scenario '${name}' of kind 'finding' with knownMiss=false must declare at least one expected finding - an empty list would make its detection check pass vacuously"
+      else
+        loaded
     else
       null;
 

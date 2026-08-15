@@ -12,14 +12,14 @@ Each benchmark scenario lives in a subdirectory under `fixtures/scenarios/<name>
 - `eval-error`: Defect causes Nix evaluation to fail. Expected error substring declared via `expectedError`.
 
 ## Manifest Field Schema
-Authoring contract for `scenario.nix` (the loader applies defaults for `knownMiss`, `heavy`, `complete`, and `exclusionReason`; malformed manifests fail at eval):
+Authoring contract for `scenario.nix` (the loader applies defaults for `knownMiss`, `heavy`, `complete`, and `exclusionReason`; a finding scenario with `knownMiss=false` and an empty `expectedFindings` list is rejected at load):
 
 - `version` (Integer, Required): Must equal `1`.
 - `name` (String, Required): Non-empty string; matches directory name.
 - `kind` (String, Required): Must be `"finding"` or `"eval-error"`.
 - `defect` (String, Required): String describing defect category/type.
 - `task` (String, Required): String prompt describing repair task.
-- `expectedFindings` (List of Attrs, Required if `kind == "finding"`): List of expected finding specifications (`[{ rule; severity; ... }]`).
+- `expectedFindings` (List of Attrs, Required if `kind == "finding"`): List of expected finding specifications (`[{ rule; severity; ... }]`). Must be non-empty when `knownMiss` is false; an empty list would make the detection check pass vacuously.
 - `expectedError` (String, Required if `kind == "eval-error"`): Non-empty substring matched against evaluation error output.
 - `goldenable` (Boolean, Required): `true` if canonical `golden/` directory exists; `false` otherwise.
 - `exclusionReason` (String, Required if `goldenable == false`): Non-empty string explaining exclusion from golden set.
