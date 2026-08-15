@@ -13,21 +13,21 @@ pub fn determine_context(buffer: &str, line_idx: usize, col_idx: usize) -> Buffe
         return BufferContext::None;
     }
 
-    // Build the text prefix up to the cursor position
-    let mut prefix_lines: Vec<String> = Vec::new();
-    for i in 0..line_idx {
-        prefix_lines.push(lines[i].to_string());
-    }
     let current_line = lines[line_idx];
     let end_col = col_idx.min(current_line.len());
-    prefix_lines.push(current_line[..end_col].to_string());
 
-    // Scan backwards line by line from current line
+    // Scan backwards line by line from current line, using slices (current
+    // line truncated at the cursor) instead of allocating owned prefix strings.
     let mut bracket_depth: i32 = 0;
     let mut brace_depth: i32 = 0;
     let mut in_includes = false;
 
-    for line in prefix_lines.iter().rev() {
+    for i in (0..=line_idx).rev() {
+        let line = if i == line_idx {
+            &current_line[..end_col]
+        } else {
+            lines[i]
+        };
         for ch in line.chars().rev() {
             match ch {
                 ']' => bracket_depth += 1,

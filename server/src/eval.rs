@@ -1,5 +1,6 @@
-use regex::Regex;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,12 +30,12 @@ pub enum EvalOutput {
 }
 
 pub trait NixEvaluator: Send + Sync + 'static {
-    fn detect_system(&self) -> futures_util::future::BoxFuture<'static, Result<String, String>>;
+    fn detect_system(&self) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
     fn eval_analysis(
         &self,
         workspace_root: PathBuf,
         system: String,
-    ) -> futures_util::future::BoxFuture<'static, Result<String, String>>;
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>>;
 }
 
 /// Mirrors the CLI's `classify_eval_err` non-fatal set (nix/check-cli.bash):
@@ -106,41 +107,18 @@ async fn nix_eval_json(args: &[&str]) -> Result<String, String> {
 pub struct CommandNixEvaluator;
 
 impl NixEvaluator for CommandNixEvaluator {
-    fn detect_system(&self) -> futures_util::future::BoxFuture<'static, Result<String, String>> {
+    fn detect_system(&self) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         Box::pin(async move {
-            let mut cmd = Command::new("nix");
-            cmd.args([
+            // `--raw` is not JSON; `nix_eval_json` returns stdout as-is (no parse).
+            nix_eval_json(&[
                 "eval",
                 "--impure",
                 "--raw",
                 "--expr",
                 "builtins.currentSystem",
             ])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true);
-
-            let child = cmd
-                .spawn()
-                .map_err(|e| format!("Failed to execute nix eval: {}", e))?;
-
-            let output = match tokio::time::timeout(EVAL_TIMEOUT, child.wait_with_output()).await {
-                Ok(Ok(out)) => out,
-                Ok(Err(e)) => return Err(format!("Failed to execute nix eval: {}", e)),
-                Err(_) => {
-                    return Err(format!(
-                        "{}nix eval timed out after {}s",
-                        TIMEOUT_SENTINEL,
-                        EVAL_TIMEOUT.as_secs()
-                    ))
-                }
-            };
-
-            if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-            } else {
-                Err(String::from_utf8_lossy(&output.stderr).to_string())
-            }
+            .await
+            .map(|s| s.trim().to_string())
         })
     }
 
@@ -148,7 +126,7 @@ impl NixEvaluator for CommandNixEvaluator {
         &self,
         workspace_root: PathBuf,
         system: String,
-    ) -> futures_util::future::BoxFuture<'static, Result<String, String>> {
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
         Box::pin(async move {
             // Target resolution (KTD5), each step only after missing-attribute:
             // 1. path:<ws>#den-lsp-analysis (committed flake output)
@@ -214,28 +192,34 @@ pub fn parse_nix_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
         stderr.trim().to_string()
     };
 
-    // Match pattern like `at /path/to/file.nix:12:5:` or `at file.nix:12:`
-    let re = Regex::new(r"at\s+([^\s:]+):(\d+)").unwrap();
-    let position = if let Some(caps) = re.captures(stderr) {
-        let file = caps.get(1).unwrap().as_str().to_string();
-        let line = caps.get(2).unwrap().as_str().parse::<u32>().unwrap_or(1);
-        Some((file, line))
-    } else {
-        None
-    };
+    // `at <path>:<line>` (optional `:<col>` and trailing `:`), last occurrence.
+    let position = stderr.rfind("at ").and_then(|idx| {
+        let spec = stderr[idx + 3..].split_whitespace().next()?;
+        let spec = spec.trim_end_matches(':');
+        let (file, rest) = spec.split_once(':')?;
+        if file.is_empty() {
+            return None;
+        }
+        let line = rest.split(':').next()?.parse().ok()?;
+        Some((file.to_string(), line))
+    });
 
     (error_block, position)
 }
 
-/// Strip `TIMEOUT_SENTINEL` from a synthetic deadline, or parse real nix stderr.
-/// Both the per-eval (`nix_eval_json`) deadline and the orchestrator-level
-/// `tokio::time::timeout` around `eval_analysis` produce sentinel-prefixed
-/// messages so this classification stays uniform.
+/// Strip `TIMEOUT_SENTINEL` from a `nix_eval_json` deadline, or parse real nix stderr.
 fn classify_eval_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
     if let Some(msg) = stderr.strip_prefix(TIMEOUT_SENTINEL) {
         (msg.to_string(), None)
     } else {
         parse_nix_stderr(stderr)
+    }
+}
+
+fn timeout_eval_output(message: String) -> EvalOutput {
+    EvalOutput::Error {
+        error_block: message,
+        position: None,
     }
 }
 
@@ -313,46 +297,32 @@ impl EvalOrchestrator {
                                     s
                                 }
                                 Ok(Err(e)) => {
-                                    let (error_block, position) =
+                                    let error_block =
                                         if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
-                                            (msg.to_string(), None)
+                                            msg.to_string()
                                         } else {
-                                            (format!("Failed to detect system: {}", e), None)
+                                            format!("Failed to detect system: {}", e)
                                         };
                                     publish_eval_result(
                                         &generation,
                                         current_gen,
                                         &last_known_good,
                                         on_eval_complete.as_ref(),
-                                        EvalOutput::Error {
-                                            error_block,
-                                            position,
-                                        },
+                                        timeout_eval_output(error_block),
                                     )
                                     .await;
                                     return;
                                 }
                                 Err(_) => {
-                                    let e = format!(
-                                        "{}Nix system detection timed out after {}s",
-                                        TIMEOUT_SENTINEL,
-                                        eval_timeout.as_secs()
-                                    );
-                                    let (error_block, position) =
-                                        if let Some(msg) = e.strip_prefix(TIMEOUT_SENTINEL) {
-                                            (msg.to_string(), None)
-                                        } else {
-                                            (format!("Failed to detect system: {}", e), None)
-                                        };
                                     publish_eval_result(
                                         &generation,
                                         current_gen,
                                         &last_known_good,
                                         on_eval_complete.as_ref(),
-                                        EvalOutput::Error {
-                                            error_block,
-                                            position,
-                                        },
+                                        timeout_eval_output(format!(
+                                            "Nix system detection timed out after {}s",
+                                            eval_timeout.as_secs()
+                                        )),
                                     )
                                     .await;
                                     return;
@@ -394,18 +364,10 @@ impl EvalOrchestrator {
                                 position,
                             }
                         }
-                        Err(_) => {
-                            let stderr = format!(
-                                "{}Nix evaluation timed out after {}s",
-                                TIMEOUT_SENTINEL,
-                                eval_timeout.as_secs()
-                            );
-                            let (error_block, position) = classify_eval_stderr(&stderr);
-                            EvalOutput::Error {
-                                error_block,
-                                position,
-                            }
-                        }
+                        Err(_) => timeout_eval_output(format!(
+                            "Nix evaluation timed out after {}s",
+                            eval_timeout.as_secs()
+                        )),
                     };
 
                     publish_eval_result(
@@ -464,7 +426,6 @@ async fn publish_eval_result<F>(
 mod tests {
     use super::*;
     use crate::inventory::{Finding, Inventory};
-    use futures_util::future::{BoxFuture, FutureExt};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, MutexGuard};
 
@@ -492,10 +453,10 @@ mod tests {
     }
 
     impl NixEvaluator for MockEvaluator {
-        fn detect_system(&self) -> BoxFuture<'static, Result<String, String>> {
+        fn detect_system(&self) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             let delay = self.detect_system_delay;
             let drop_count = self.drop_count.clone();
-            async move {
+            Box::pin(async move {
                 let mut guard = DropGuard {
                     counter: drop_count,
                     disarmed: false,
@@ -505,15 +466,14 @@ mod tests {
                 }
                 guard.disarmed = true;
                 Ok("aarch64-darwin".to_string())
-            }
-            .boxed()
+            })
         }
 
         fn eval_analysis(
             &self,
             _workspace_root: PathBuf,
             _system: String,
-        ) -> BoxFuture<'static, Result<String, String>> {
+        ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> {
             let count = self.spawn_count.clone();
             let json = self.json_response.clone();
             let fail = self.fail_stderr.clone();
@@ -521,7 +481,7 @@ mod tests {
             let drop_count = self.drop_count.clone();
             let hold = self.hold_eval.clone();
 
-            async move {
+            Box::pin(async move {
                 let mut guard = DropGuard {
                     counter: drop_count,
                     disarmed: false,
@@ -539,8 +499,7 @@ mod tests {
                 } else {
                     Ok(json)
                 }
-            }
-            .boxed()
+            })
         }
     }
 

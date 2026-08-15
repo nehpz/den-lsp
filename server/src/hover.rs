@@ -1,6 +1,16 @@
 use crate::inventory::Inventory;
 use tower_lsp::lsp_types::*;
 
+fn markdown_hover(value: String) -> Hover {
+    Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value,
+        }),
+        range: None,
+    }
+}
+
 pub fn get_hover(inventory: &Inventory, word_at_cursor: &str) -> Option<Hover> {
     let trimmed = word_at_cursor.trim();
     if trimmed.is_empty() {
@@ -17,18 +27,10 @@ pub fn get_hover(inventory: &Inventory, word_at_cursor: &str) -> Option<Hover> {
             battery.provides.join(", ")
         };
 
-        let markdown = format!(
+        return Some(markdown_hover(format!(
             "### den.batteries.{}\n{}\n\n**Provides:** {}",
             battery_key, desc, provides_str
-        );
-
-        return Some(Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: markdown,
-            }),
-            range: None,
-        });
+        )));
     }
 
     // 2. Check class
@@ -38,15 +40,7 @@ pub fn get_hover(inventory: &Inventory, word_at_cursor: &str) -> Option<Hover> {
             .description
             .as_deref()
             .unwrap_or("Registered class");
-        let markdown = format!("### class {}\n{}", class_key, desc);
-
-        return Some(Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: markdown,
-            }),
-            range: None,
-        });
+        return Some(markdown_hover(format!("### class {}\n{}", class_key, desc)));
     }
 
     // 3. Check aspect (either `den.aspects.<name>` or bare `<name>`)
@@ -59,18 +53,10 @@ pub fn get_hover(inventory: &Inventory, word_at_cursor: &str) -> Option<Hover> {
             aspect.provides.join(", ")
         };
 
-        let markdown = format!(
+        return Some(markdown_hover(format!(
             "### den.aspects.{}\n{}\n\n**Provides:** {}",
             aspect_key, desc, provides_str
-        );
-
-        return Some(Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: markdown,
-            }),
-            range: None,
-        });
+        )));
     }
 
     None

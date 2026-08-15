@@ -56,10 +56,7 @@ pub struct ClassInfo {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-pub struct QuirkInfo {
-    pub description: Option<String>,
-}
+pub type QuirkInfo = ClassInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct BatteryInfo {
