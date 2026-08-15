@@ -55,6 +55,9 @@ echo
 WS_GATING="${REPO_DIR}/fixtures/scenarios/base-gating-dup/workspace"
 WS_ADVISORY="${REPO_DIR}/fixtures/scenarios/base-advisory-only/workspace"
 WS_BROKEN="${REPO_DIR}/fixtures/scenarios/base-broken/workspace"
+UNWIRED_GATING="${REPO_DIR}/fixtures/unwired/gating-dup"
+UNWIRED_ADVISORY="${REPO_DIR}/fixtures/unwired/advisory-only"
+UNWIRED_BROKEN="${REPO_DIR}/fixtures/unwired/broken"
 
 FAILED=0
 
@@ -225,8 +228,8 @@ assert_check \
 echo "==> Testing unwired gating-dup variant..."
 gdup_err="$(mktemp)"
 set +e
-output=$(nix eval --json "${WS_GATING}#den-lsp-analysis" \
-  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}" 2>"${gdup_err}")
+output=$(nix eval --json "${UNWIRED_GATING}#den-lsp-analysis" \
+  "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}" 2>"${gdup_err}")
 exit_code=$?
 set -e
 ASSERT_FAIL_BODY='echo "${output}"; cat "${gdup_err}"'
@@ -249,16 +252,16 @@ assert_check \
   "unwired advisory-only (exit 0, advisory findings, no gating)" \
   '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired advisory-only document was not advisory-only"; else echo "unwired advisory-only expected exit 0 but got ${exit_code}"; fi)' \
   '[ "${exit_code}" -eq 0 ] && echo "${output}" | grep -q '\''"advisory"'\'' && echo "${output}" | grep -q '\''"gating":0'\''' \
-  -- nix eval --json "${WS_ADVISORY}#den-lsp-analysis" \
-  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}"
+  -- nix eval --json "${UNWIRED_ADVISORY}#den-lsp-analysis" \
+  "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}"
 
 assert_check \
   "unwired broken variant" \
   "unwired broken (exit nonzero and output referenced failing file trigger.nix)" \
   '$(if [ "${exit_code}" -eq 0 ]; then echo "unwired broken expected exit code nonzero but got 0"; else echo "unwired broken exited nonzero but output did not reference failing file trigger.nix"; fi)' \
   '[ "${exit_code}" -ne 0 ] && echo "${output}" | grep -q "trigger.nix"' \
-  -- nix eval --json "${WS_BROKEN}#den-lsp-analysis" \
-  "${OVERRIDE_ARGS[@]+"${OVERRIDE_ARGS[@]}"}"
+  -- nix eval --json "${UNWIRED_BROKEN}#den-lsp-analysis" \
+  "${UNWIRED_ARGS[@]+"${UNWIRED_ARGS[@]}"}"
 
 echo "==> Testing unwired inline-imports variant..."
 set +e
@@ -359,14 +362,14 @@ assert_check \
   "CLI unwired gating-dup (exit 1 naming web+db)" \
   'CLI unwired gating-dup expected exit 1 naming web+db but got ${CLI_EC}' \
   '[ "${CLI_EC}" -eq 1 ] && echo "${CLI_OUT}" | grep -q "web" && echo "${CLI_OUT}" | grep -q "db"' \
-  --cli "${WS_GATING}"
+  --cli "${UNWIRED_GATING}"
 
 assert_check \
   "CLI --draft on gating (exit 0, findings still shown)" \
   "CLI --draft on gating (exit 0, findings still shown)" \
   'CLI --draft on gating expected exit 0 with findings but got ${CLI_EC}' \
   '[ "${CLI_EC}" -eq 0 ] && echo "${CLI_OUT}" | grep -q "web" && echo "${CLI_OUT}" | grep -q "db"' \
-  --cli --draft "${WS_GATING}"
+  --cli --draft "${UNWIRED_GATING}"
 
 ASSERT_FAIL_BODY='echo "stdout: ${CLI_OUT}"; echo "stderr: ${CLI_ERR}"'
 assert_check \
@@ -374,7 +377,7 @@ assert_check \
   "CLI --json on gating (JSON v1 duplication, stderr text, stdout is JSON)" \
   'CLI --json on gating did not match the contract (exit ${CLI_EC})' \
   '[ "${CLI_EC}" -eq 1 ] && jq -e '\''.version == 1 and any(.findings[]; .rule == "duplication" and .severity == "gating")'\'' "${CLI_DIR}/out" >/dev/null && echo "${CLI_ERR}" | grep -q "den-lsp:" && jq -e . "${CLI_DIR}/out" >/dev/null' \
-  --cli --json "${WS_GATING}"
+  --cli --json "${UNWIRED_GATING}"
 
 ASSERT_FAIL_BODY='echo "stdout: ${CLI_OUT}"; echo "stderr: ${CLI_ERR}"'
 assert_check \
@@ -382,7 +385,7 @@ assert_check \
   "CLI broken + --json (empty stdout, exit 2, stderr names trigger.nix)" \
   'CLI broken + --json expected empty stdout, exit 2, and trigger.nix on stderr but got ${CLI_EC}' \
   '[ "${CLI_EC}" -eq 2 ] && [ ! -s "${CLI_DIR}/out" ] && echo "${CLI_ERR}" | grep -q "trigger.nix"' \
-  --cli --json "${WS_BROKEN}"
+  --cli --json "${UNWIRED_BROKEN}"
 
 ASSERT_FAIL_BODY='echo "${CLI_ERR}"'
 assert_check \
@@ -422,7 +425,7 @@ assert_check \
   "CLI unwired advisory-only --json (exit 0, advisory present, gating==0)" \
   'CLI unwired advisory-only --json did not match (exit ${CLI_EC})' \
   '[ "${CLI_EC}" -eq 0 ] && jq -e '\''.findings | any(.severity == "advisory")'\'' "${CLI_DIR}/out" >/dev/null && jq -e '\''.summary.gating == 0'\'' "${CLI_DIR}/out" >/dev/null' \
-  --cli --json "${WS_ADVISORY}"
+  --cli --json "${UNWIRED_ADVISORY}"
 
 assert_check \
   "CLI wired gating-dup text (exit 1)" \
@@ -471,10 +474,10 @@ assert_check \
   --cli --unknown "${REPO_DIR}/fixtures/unwired"
 
 echo "==> Testing CLI --json determinism (two runs byte-identical)..."
-run_cli --json "${WS_GATING}"
+run_cli --json "${UNWIRED_GATING}"
 first_json_dir="${CLI_DIR}"
 first_ec="${CLI_EC}"
-run_cli --json "${WS_GATING}"
+run_cli --json "${UNWIRED_GATING}"
 ASSERT_KEEP_CLI=1
 ASSERT_FAIL_BODY='diff "${first_json_dir}/out" "${CLI_DIR}/out" || true'
 assert_check \

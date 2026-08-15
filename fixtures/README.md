@@ -9,8 +9,8 @@ This directory contains consumer flake fixtures for end-to-end integration testi
   - `base-gating-dup/workspace/`: AE1 trigger: two aspects (`web` and `db`) emitting identical multi-attribute `nixos` configuration blocks (`services.openssh`), triggering a gating duplication finding.
   - `base-advisory-only/workspace/`: AE6 trigger: multiple single-option aspects with no declared provides, demonstrating that advisory findings print without failing the gate (exit 0).
   - `base-broken/workspace/`: R13 trigger: module with a deliberate evaluation error (`throw`), asserting root error reporting with file location details (`trigger.nix`).
-- `unwired/`: Zero-touch negatives (`no-den`, `no-flake-parts`, `renamed-flake-parts`, `old-den`, `unreachable`, `inline-imports`) plus a clean unwired base. Gating/advisory/broken coverage shares `scenarios/base-*/workspace`.
-- `run-checks.bash`: E2E runner script that evaluates and asserts behavior across the base fixture, scenario workspaces, and unwired negatives.
+- `unwired/`: Zero-touch fixtures with no `den-lsp` input (flake-parts shim injection). Clean base; `gating-dup`, `advisory-only`, and `broken` variants of the same triggers as `scenarios/base-*/workspace`; plus negatives (`no-den`, `no-flake-parts`, `renamed-flake-parts`, `old-den`, `unreachable`, `inline-imports`).
+- `run-checks.bash`: E2E runner script that evaluates and asserts behavior across the base fixture, wired scenario workspaces, and unwired zero-touch fixtures.
 
 ## Usage
 
