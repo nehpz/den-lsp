@@ -12,7 +12,7 @@ Each benchmark scenario lives in a subdirectory under `fixtures/scenarios/<name>
 - `eval-error`: Defect causes Nix evaluation to fail. Expected error substring declared via `expectedError`.
 
 ## Manifest Field Schema
-Authoring contract for `scenario.nix` (the loader applies defaults for `knownMiss`, `heavy`, `complete`, and `exclusionReason`; a finding scenario with `knownMiss=false` and an empty `expectedFindings` list is rejected at load):
+Authoring contract for `scenario.nix` (the loader applies defaults for `knownMiss`, `heavy`, `complete`, and `exclusionReason`; enforcement locations are listed under "Validation Boundary" below):
 
 - `version` (Integer, Required): Must equal `1`.
 - `name` (String, Required): Non-empty string; matches directory name.
@@ -27,6 +27,16 @@ Authoring contract for `scenario.nix` (the loader applies defaults for `knownMis
 - `knownMiss` (Boolean, Optional, default `false`): Authoring-time-only designation for known engine/adapter gaps. Never a post-hoc reclassification.
 - `heavy` (Boolean, Optional, default `false`): Resource-heavy scenario. Excluded from default evaluation sweeps.
 - `complete` (Boolean, Optional, default `false`): If `false` or missing, loader ignores scenario.
+
+## Validation Boundary
+
+Manifest checks are split by failure mode, deliberately (a full `validateScenario` pass was removed in PR #30 because it only duplicated loud failures):
+
+- **Load-time guards (`lib.nix`)** exist only for *silent-pass* failure modes — a manifest that would make a check report green while verifying nothing. Currently: a non-`knownMiss` `finding` scenario with an empty `expectedFindings` list, and a non-`knownMiss` `eval-error` scenario with an empty `expectedError`.
+- **Comparator tier (`tests/scenarios/comparator.nix`, runs in `nix flake check`)** pins the loud structural invariants for the entire committed corpus: `kind` is one of the taxonomy values, `finding` scenarios carry a list `expectedFindings`, `eval-error` scenarios carry a non-empty string `expectedError` (including `knownMiss` ones), and every non-`goldenable` scenario carries a non-empty `exclusionReason`.
+- **Everything else** (missing `name`/`task`, mistyped fields) fails loudly at the consuming site during eval; it is not re-checked anywhere.
+
+When adding a manifest field: if a bad value can pass *silently*, guard it in `lib.nix`; if it fails loudly, add a corpus invariant to the comparator only when the failure site would be confusing. Do not reintroduce a schema validator in the loader.
 
 ## Flag Semantics
 - `clearCut`: Marks unambiguous scenarios included in standard benchmark suites.

@@ -31,6 +31,24 @@ let
     ) dirEntries
   );
 
+  # VALIDATION BOUNDARY (deliberate; see fixtures/scenarios/README.md
+  # "Validation Boundary" and docs/solutions/conventions/):
+  #
+  # The loader guards ONLY failure modes that would otherwise pass SILENTLY —
+  # a check that matches vacuously and reports green while verifying nothing.
+  # Today those are exactly the two guards below (empty expectedFindings /
+  # empty expectedError on a non-knownMiss scenario).
+  #
+  # Everything else about manifest shape fails LOUDLY elsewhere and is NOT
+  # re-checked here — do not add schema validation to this function:
+  #   - kind taxonomy, per-kind spec shape, and goldenable/exclusionReason
+  #     pairing: pinned for the whole committed corpus by
+  #     tests/scenarios/comparator.nix (flake-check tier).
+  #   - missing/mistyped fields consumed downstream: Nix eval fails with a
+  #     usable trace at the consuming site.
+  # A full validateScenario pass existed and was removed (PR #30) because it
+  # only duplicated those loud failures. If a NEW field gains a silent-pass
+  # failure mode, add a guard HERE; if it fails loudly, leave it alone.
   loadScenarioFile =
     path:
     let
