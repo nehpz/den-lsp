@@ -3,53 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-REPAIRED_DIR=""
-GOLDEN_DIR=""
-SCENARIO_KIND="finding"
-EXPECTED_RULES=()
-POSITIONAL_COUNT=0
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --repaired)
-      REPAIRED_DIR="$2"
-      shift 2
-      ;;
-    --golden)
-      GOLDEN_DIR="$2"
-      shift 2
-      ;;
-    --kind)
-      SCENARIO_KIND="$2"
-      shift 2
-      ;;
-    --expected-rules)
-      shift
-      while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-        EXPECTED_RULES+=("$1")
-        shift
-      done
-      ;;
-    *)
-      case "$POSITIONAL_COUNT" in
-        0)
-          REPAIRED_DIR="$1"
-          ;;
-        1)
-          GOLDEN_DIR="$1"
-          ;;
-        2)
-          SCENARIO_KIND="$1"
-          ;;
-        *)
-          EXPECTED_RULES+=("$1")
-          ;;
-      esac
-      POSITIONAL_COUNT=$((POSITIONAL_COUNT + 1))
-      shift
-      ;;
-  esac
-done
+REPAIRED_DIR="${1:-}"
+GOLDEN_DIR="${2:-}"
+# $3 is unused scenario_kind (callers pass it; comparison does not branch on it)
+EXPECTED_RULES=("${@:4}")
 
 if [ -z "$REPAIRED_DIR" ] || [ -z "$GOLDEN_DIR" ]; then
   echo "Usage: compare.bash <repaired_dir> <golden_dir> [scenario_kind] [expected_rule1 ...]" >&2

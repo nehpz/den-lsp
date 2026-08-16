@@ -2,72 +2,6 @@
   lib ? null,
 }:
 let
-  # Builtins-only validation helper for scenario manifests
-  validateScenario =
-    manifest:
-    if !(builtins.isAttrs manifest) then
-      throw "Scenario manifest must be an attrset (got ${builtins.typeOf manifest})"
-    else
-      let
-        sName =
-          if manifest ? name && builtins.isString manifest.name && manifest.name != "" then
-            manifest.name
-          else
-            "<unknown>";
-        valOf = attr: if manifest ? ${attr} then builtins.toJSON manifest.${attr} else "missing";
-      in
-      if !(manifest ? version) || manifest.version != 1 then
-        throw "Scenario '${sName}' version must be 1 (got ${valOf "version"})"
-      else if !(manifest ? name) || !(builtins.isString manifest.name) || manifest.name == "" then
-        throw "Scenario manifest name must be a non-empty string (got ${valOf "name"})"
-      else if !(manifest ? kind) || (manifest.kind != "finding" && manifest.kind != "eval-error") then
-        throw "Scenario '${sName}' kind must be 'finding' or 'eval-error' (got ${valOf "kind"})"
-      else if !(manifest ? defect) || !(builtins.isString manifest.defect) then
-        throw "Scenario '${sName}' defect must be a string (got ${valOf "defect"})"
-      else if !(manifest ? task) || !(builtins.isString manifest.task) then
-        throw "Scenario '${sName}' task must be a string (got ${valOf "task"})"
-      else if
-        manifest.kind == "finding"
-        && (!(manifest ? expectedFindings) || !(builtins.isList manifest.expectedFindings))
-      then
-        throw "Scenario '${sName}' of kind 'finding' must specify an expectedFindings list (got ${valOf "expectedFindings"})"
-      else if
-        manifest.kind == "finding" && !(manifest.knownMiss or false) && manifest.expectedFindings == [ ]
-      then
-        throw "Scenario '${sName}' of kind 'finding' with knownMiss=false must declare at least one expected finding - an empty list would make its detection check pass vacuously"
-      else if
-        manifest.kind == "eval-error"
-        && (
-          !(manifest ? expectedError)
-          || !(builtins.isString manifest.expectedError)
-          || manifest.expectedError == ""
-        )
-      then
-        throw "Scenario '${sName}' of kind 'eval-error' must specify a non-empty expectedError string (got ${valOf "expectedError"})"
-      else if !(manifest ? goldenable) || !(builtins.isBool manifest.goldenable) then
-        throw "Scenario '${sName}' goldenable must be a boolean (got ${valOf "goldenable"})"
-      else if
-        manifest.goldenable == false
-        && (
-          !(manifest ? exclusionReason)
-          || !(builtins.isString manifest.exclusionReason)
-          || manifest.exclusionReason == ""
-        )
-      then
-        throw "Scenario '${sName}' with goldenable=false requires a non-empty exclusionReason string (got ${valOf "exclusionReason"})"
-      else if !(manifest ? clearCut) || !(builtins.isBool manifest.clearCut) then
-        throw "Scenario '${sName}' clearCut must be a boolean (got ${valOf "clearCut"})"
-      else if manifest ? heavy && !(builtins.isBool manifest.heavy) then
-        throw "Scenario '${sName}' heavy must be a boolean (got ${valOf "heavy"})"
-      else
-        manifest
-        // {
-          knownMiss = manifest.knownMiss or false;
-          heavy = manifest.heavy or false;
-          complete = manifest.complete or false;
-          exclusionReason = manifest.exclusionReason or null;
-        };
-
   filterAttrs =
     if builtins ? filterAttrs then
       builtins.filterAttrs
@@ -97,12 +31,51 @@ let
     ) dirEntries
   );
 
+  # VALIDATION BOUNDARY (deliberate; see fixtures/scenarios/README.md
+  # "Validation Boundary" and docs/solutions/conventions/):
+  #
+  # The loader guards ONLY failure modes that would otherwise pass SILENTLY —
+  # a check that matches vacuously and reports green while verifying nothing.
+  # Today those are exactly the two guards below (empty expectedFindings /
+  # empty expectedError on a non-knownMiss scenario).
+  #
+  # Everything else about manifest shape fails LOUDLY elsewhere and is NOT
+  # re-checked here — do not add schema validation to this function:
+  #   - kind taxonomy, per-kind spec shape, and goldenable/exclusionReason
+  #     pairing: pinned for the whole committed corpus by
+  #     tests/scenarios/comparator.nix (flake-check tier).
+  #   - missing/mistyped fields consumed downstream: Nix eval fails with a
+  #     usable trace at the consuming site.
+  # A full validateScenario pass existed and was removed (PR #30) because it
+  # only duplicated those loud failures. If a NEW field gains a silent-pass
+  # failure mode, add a guard HERE; if it fails loudly, leave it alone.
   loadScenarioFile =
     path:
     let
       raw = import path;
     in
-    if raw.complete or false then validateScenario raw else null;
+    if raw.complete or false then
+      let
+        loaded = raw // {
+          knownMiss = raw.knownMiss or false;
+          heavy = raw.heavy or false;
+          complete = raw.complete or false;
+          exclusionReason = raw.exclusionReason or null;
+        };
+        name = loaded.name or "<unknown>";
+      in
+      if
+        (loaded.kind or "") == "finding" && !loaded.knownMiss && (loaded.expectedFindings or [ ]) == [ ]
+      then
+        throw "Scenario '${name}' of kind 'finding' with knownMiss=false must declare at least one expected finding - an empty list would make its detection check pass vacuously"
+      else if
+        (loaded.kind or "") == "eval-error" && !loaded.knownMiss && (loaded.expectedError or "") == ""
+      then
+        throw "Scenario '${name}' of kind 'eval-error' with knownMiss=false must declare a non-empty expectedError - an empty string would match any output vacuously"
+      else
+        loaded
+    else
+      null;
 
   scenariosList = builtins.filter (s: s != null) (
     map (dir: loadScenarioFile (./. + "/${dir}/scenario.nix")) subdirNames
@@ -116,5 +89,5 @@ let
   );
 in
 {
-  inherit scenarios validateScenario loadScenarioFile;
+  inherit scenarios loadScenarioFile;
 }

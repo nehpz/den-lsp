@@ -12,8 +12,8 @@
 #                               path may not exist there:
 #                                 nix eval --json path:.#den-lsp-analysis
 #
-# Works against stock den (>= v0.18.0): the analysis layer is injected via
-# inject-analysis.nix, no den changes required. Plain evalModules consumers
+# Works against stock den (>= v0.18.0): the analysis layer is injected
+# below via mkDefault, no den changes required. Plain evalModules consumers
 # use flakeModules.noflake (nix/check-noflake.nix) instead.
 { den-lsp }:
 { config, lib, ... }:
@@ -21,7 +21,12 @@ let
   core = import ./check-core.nix { inherit den-lsp; };
 in
 {
-  imports = [ ./inject-analysis.nix ];
+  config.den.lib.analysis = lib.mkDefault (
+    import ./den-analysis.nix {
+      inherit (config) den;
+      inherit lib;
+    }
+  );
 
   config.flake.den-lsp-analysis = core.analysisFor { inherit (config) den; };
 

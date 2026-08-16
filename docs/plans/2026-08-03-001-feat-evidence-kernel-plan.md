@@ -137,7 +137,7 @@ flowchart TB
 
 ### Dependencies / Assumptions
 
-- The existing consumer variant triggers (`fixtures/consumer-variants/*/trigger.nix`) are the starting seed corpus; four of six rules have no trigger fixture today and require authoring (R15).
+- The existing consumer variant triggers (`fixtures/scenarios/base-*/workspace/trigger.nix`) are the starting seed corpus; four of six rules have no trigger fixture today and require authoring (R15).
 - The engine's six rules (four gating, two advisory) define the initial candidate finding set; the unit-test pattern of deriving synthetic-IR variants via functional overrides (`tests/fixtures/synthetic-ir.nix`) is reusable for the hermetic tier.
 - Golden comparison requires a runner-level comparator over post-repair evaluated outputs; the vendored wrapper-stripping helper (`nix/den-analysis.nix:109-136`) is IR-capture internals, not a comparator, and does not handle syntactic variants (let-bindings, list ordering, merged attribute sets). Designing that comparator, including its semantic-equivalence boundary, is planning scope for R7.
 - Agent runs incur LLM cost and are acceptable on demand at clear-cut-set scale.
@@ -160,7 +160,7 @@ flowchart TB
 
 - `STRATEGY.md` — metric definitions and track framing.
 - `docs/ideation/2026-08-03-den-lsp-roadmap-ideation.html` — roadmap context; this plan is its Focus 1.
-- Verified against the repo: CI publishes without tests (`.github/workflows/ci.yml:7-23`); variant triggers exist (`fixtures/consumer-variants/{broken,gating-dup,advisory-only}/trigger.nix`); IR and findings document are versioned (`nix/den-analysis.nix:237,265`, `nix/engine/document.nix:24,49`); normalization machinery (`nix/den-analysis.nix:109-136`); check gate and CLI (`nix/check.nix:37-38`); rule inventory (`nix/engine/rules/structural/default.nix:5-6`, `nix/engine/rules/idiom/default.nix:4-7`); no eval/metrics tooling exists anywhere in the repo.
+- Verified against the repo: CI publishes without tests (`.github/workflows/ci.yml:7-23`); variant triggers exist (`fixtures/scenarios/base-{broken,gating-dup,advisory-only}/workspace/trigger.nix`); IR and findings document are versioned (`nix/den-analysis.nix:237,265`, `nix/engine/document.nix:24,49`); normalization machinery (`nix/den-analysis.nix:109-136`); check gate and CLI (`nix/check.nix:37-38`); rule inventory (`nix/engine/rules/structural/default.nix:5-6`, `nix/engine/rules/idiom/default.nix:4-7`); no eval/metrics tooling exists anywhere in the repo.
 
 ---
 
@@ -256,7 +256,7 @@ Phase A: U1 (independent, lands first per KD8). Phase B: U2 → U3, U4, U5 (corp
   1. Define the manifest shape (KTD1): scenario name, seeded-defect description, expected findings, task prompt, goldenability marker with reason when excluded (R4).
   2. Lay out per-scenario directories: `workspace/` is the only agent-visible subtree (KTD7); vendored modules only (KTD2).
   3. Encode `gating-dup`, `advisory-only`, and `broken` as scenarios with expected findings; author goldens where the repair is unambiguous, recording exclusions otherwise.
-- **Patterns to follow:** version field conventions in `nix/den-analysis.nix:237` and `nix/engine/document.nix:24`; trigger-module seeding style in `fixtures/consumer-variants/*/trigger.nix`.
+- **Patterns to follow:** version field conventions in `nix/den-analysis.nix:237` and `nix/engine/document.nix:24`; trigger-module seeding style in `fixtures/scenarios/base-*/workspace/trigger.nix`.
 - **Test scenarios:**
   - Loader rejects a manifest with a missing or wrong `version`.
   - Covers AE2: a scenario marked non-goldenable carries a recorded reason and is excluded from clear-cut listings.

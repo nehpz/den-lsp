@@ -12,11 +12,6 @@
   den-lsp-src ? ../.,
 }:
 let
-  core = import ./check-core.nix {
-    den-lsp = {
-      lib = { };
-    };
-  };
   helper = pkgs.writeText "den-lsp-check-outcome.nix" ''
     { jsonFile, strictness }:
     let
@@ -47,7 +42,6 @@ pkgs.writeShellApplication {
     SHIM=${den-lsp-src}/nix
     EPHEMERAL=${den-lsp-src}/nix/ephemeral.nix
     OUTCOME_HELPER=${helper}
-    DEFAULT_GATING_NOTICE=${lib.escapeShellArg core.gatingNotice}
   ''
   + builtins.readFile ./check-cli.bash;
 }

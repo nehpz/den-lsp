@@ -15,7 +15,7 @@ if [ -z "${REPO_DIR:-}" ] || [ ! -f "${REPO_DIR}/fixtures/scenarios/lib.nix" ]; 
   fi
 fi
 export REPO_DIR="${REPO_DIR}"
-# Host directories for agent CLIs (e.g. claude, omp), applied only to adapter invocation
+# Host directories for agent CLIs (e.g. omp), applied only to adapter invocation
 ADAPTER_PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$HOME/.nix-profile/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.bun/bin"
 
 NIX_ERR_FILE=""
@@ -48,7 +48,7 @@ Commands:
   report             Render go/no-go readout report
 
 Options for run:
-  --adapter <name>   Required. Adapter script name (e.g. stub, claude)
+  --adapter <name>   Required. Adapter script name (e.g. stub, omp)
   --scenario <name>  Run a single scenario by name
   --set <name>       Target scenario set: clear-cut (default)
   --no-findings      Withhold findings from prompt (control arm, R10)
@@ -59,7 +59,6 @@ Options for run:
 
 Options for report:
   --in <file>        Metrics JSON-lines input file (default: ./evidence-metrics.jsonl)
-  --out <file>       Optional output markdown file
   --help, -h         Show this help message
 EOF
 }
@@ -418,7 +417,7 @@ for ((i=0; i<SCENARIO_COUNT; i++)); do
 
       COMPARE_OUT=""
       set +e
-      COMPARE_OUT="$("${SCRIPT_DIR}/compare.bash" --repaired "${TEMP_WORKSPACE}" --golden "${GOLDEN_DIR_PATH}" --kind "${KIND}" ${EXPECTED_RULES[@]+--expected-rules "${EXPECTED_RULES[@]}"})"
+      COMPARE_OUT="$("${SCRIPT_DIR}/compare.bash" "${TEMP_WORKSPACE}" "${GOLDEN_DIR_PATH}" "${KIND}" ${EXPECTED_RULES[@]+"${EXPECTED_RULES[@]}"})"
       COMPARE_EC=$?
       set -e
 

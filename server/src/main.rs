@@ -188,6 +188,7 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
+        // Position.character is UTF-16; determine_context converts to a byte index.
         let context = determine_context(&buffer, pos.line as usize, pos.character as usize);
 
         let inventory = if let Some(orch) = self.orchestrator.read().await.as_ref() {
@@ -218,7 +219,8 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
         let line = lines[pos.line as usize];
-        let col = pos.character as usize;
+        // Position.character is UTF-16; convert to a byte index before slicing.
+        let col = crate::context::utf16_col_to_byte_idx(line, pos.character as usize);
         if col >= line.len() {
             return Ok(None);
         }

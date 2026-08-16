@@ -79,23 +79,20 @@ pub fn build_diagnostics_for_success(
         }
     }
 
-    // Ensure all previously published URIs are accounted for (clearing any that no longer have findings)
-    let mut updated_published = HashSet::new();
-    let mut result_map = diagnostics_by_url.clone();
-
+    // Empty entries for previously published URIs clear stale diagnostics on
+    // the next publish; mutate in place rather than cloning the map.
     for prev_url in previously_published {
-        if !result_map.contains_key(prev_url) {
-            result_map.insert(prev_url.clone(), Vec::new());
-        }
+        diagnostics_by_url.entry(prev_url.clone()).or_default();
     }
 
-    for (url, diags) in &result_map {
+    let mut updated_published = HashSet::new();
+    for (url, diags) in &diagnostics_by_url {
         if !diags.is_empty() {
             updated_published.insert(url.clone());
         }
     }
 
-    (result_map, updated_published)
+    (diagnostics_by_url, updated_published)
 }
 
 pub fn build_diagnostic_for_eval_failure(
