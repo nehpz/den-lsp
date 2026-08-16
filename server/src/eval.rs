@@ -194,15 +194,23 @@ pub fn parse_nix_stderr(stderr: &str) -> (String, Option<(String, u32)>) {
 
     // `at <path>:<line>` (optional `:<col>` and trailing `:`). Nix prints the
     // real error location first; later `at` frames are outer call sites. Scan
-    // forward (same first-match semantics as the former `at\s+…` regex),
-    // require a word boundary so English "that " is not a hit, and keep
-    // scanning past occurrences whose following token is not `<path>:<line>`.
-    let position = stderr.match_indices("at ").find_map(|(idx, _)| {
-        if idx > 0 && !stderr[..idx].ends_with(|c: char| c.is_whitespace()) {
+    // forward (same first-match semantics as the former `at\s+…` regex): the
+    // marker may open the string or follow whitespace or `(` (bracketed
+    // locations), any whitespace may separate `at` from the spec (the regex
+    // matched `\s+`, including newlines), English "that " is not a hit, and
+    // occurrences whose following token is not `<path>:<line>` are skipped.
+    let position = stderr.match_indices("at").find_map(|(idx, _)| {
+        if idx > 0
+            && !stderr[..idx].ends_with(|c: char| c.is_whitespace() || c == '(')
+        {
             return None;
         }
-        let spec = stderr[idx + 3..].split_whitespace().next()?;
-        let spec = spec.trim_end_matches(':');
+        let rest = &stderr[idx + 2..];
+        if !rest.starts_with(|c: char| c.is_whitespace()) {
+            return None;
+        }
+        let spec = rest.split_whitespace().next()?;
+        let spec = spec.trim_end_matches(')').trim_end_matches(':');
         let (file, rest) = spec.split_once(':')?;
         if file.is_empty() {
             return None;
@@ -474,6 +482,22 @@ error: undefined variable 'foo'
     fn parse_nix_stderr_that_is_not_a_location() {
         let (_, pos) = parse_nix_stderr("that /foo:12");
         assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn parse_nix_stderr_accepts_bracketed_location() {
+        // Some messages bracket the location: "(at /path:line:col)". The old
+        // `at\s+…` regex matched inside the parens; the scan must too.
+        let (_, pos) = parse_nix_stderr("error: assertion failed (at /workspace/mod.nix:7:3)");
+        assert_eq!(pos, Some(("/workspace/mod.nix".to_string(), 7)));
+    }
+
+    #[test]
+    fn parse_nix_stderr_accepts_newline_separated_location() {
+        // `at` and its spec may be split across a line break; the old regex's
+        // `\s+` matched newlines.
+        let (_, pos) = parse_nix_stderr("error: boom at\n       /workspace/mod.nix:9:1:");
+        assert_eq!(pos, Some(("/workspace/mod.nix".to_string(), 9)));
     }
 
     pub struct DropGuard {
